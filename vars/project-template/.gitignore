@@ -1,0 +1,96 @@
+# =============================================================================
+# PYTHON GITIGNORE TEMPLATE
+# =============================================================================
+# Note: .agent_work/ is intentionally NOT excluded. It is the agent's audit
+# trail and is committed on the feature branch; it collapses cleanly on
+# squash-merge into main.
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+MANIFEST
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Translations
+*.mo
+*.pot
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.worktrees/
+
+# Python version file
+.python-version
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytest_cache/
+.pytype/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Secrets (never commit)
+*.pem
+*.key
+.env.local
+.env.*.local
+
+# NOTE: uv.lock is NOT ignored; it should be committed for reproducible builds
+# NOTE: pyproject.toml is NOT ignored; it is the project configuration
+# NOTE: .agent_work/ is NOT ignored; agent audit trail (see CLAUDE.md)

@@ -32,7 +32,12 @@ implement loop (multi-approach) -> review (fresh context) -> open PR
 ```
 agent-coding/
 ├── README.md           (this file)
-└── specs/              (specification documents)
+├── specs/              (specification documents)
+└── vars/               (reference assets shipped with agent-code)
+    ├── ticket-template/    (canonical user story Markdown)
+    └── project-template/   (canonical Python project scaffolding,
+                             with all coding rules embedded in CLAUDE.md
+                             and .agent_docs/, no external skill needed)
 ```
 
 ## License

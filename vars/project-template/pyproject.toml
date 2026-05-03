@@ -12,7 +12,6 @@ authors = [
 dependencies = [
     "typer>=0.15.0",
     "rich>=13.9.0",
-    "httpx>=0.28.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
     "opentelemetry-api>=1.29.0",
@@ -99,7 +98,7 @@ show_error_codes = true
 show_column_numbers = true
 
 [[tool.mypy.overrides]]
-module = ["httpx.*", "opentelemetry.*"]
+module = ["opentelemetry.*"]
 ignore_missing_imports = true
 
 # pytest

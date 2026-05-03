@@ -1,17 +1,83 @@
-# agent-coding
+# agent-code
 
-Specification and (eventually) implementation of `agent-code`, an autonomous coding agent that takes a structured user story as input and produces a Pull Request as output.
+Autonomous coding agent that takes a structured user story as input and produces a Pull Request as output, designed for on-premise mid-class open-weight models.
 
 ## Status
 
-**Specification phase.** No implementation yet. See `specs/` for the current MVP spec.
+**Bootstrap phase.** Project skeleton is in place; orchestrator and phase implementations are next. See `specs/` for the MVP specification, `vars/` for the canonical templates the agent consumes.
+
+## Tech stack
+
+Python 3.13+, Typer (CLI), pydantic-settings (config), OpenTelemetry (tracing), Ruff (lint, format), mypy (typing, strict), pytest (tests), bandit (security), uv (package manager).
+
+## Prerequisites
+
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/) (package manager)
+- `make` (single dev interface)
+- `git`, `gh` (GitHub CLI, authenticated) for PR operations
+- `ripgrep`, `ast-grep` for codebase navigation (used by the agent at runtime, not at build)
+- Docker (optional, for `make docker-build` and `make run-up`)
+
+## Install
+
+```bash
+uv sync
+```
+
+## Usage
+
+The CLI surface is currently a placeholder. Once the orchestrator is wired:
+
+```bash
+make run ARGS='<path-to-ticket.md>'
+```
+
+## Quality gate
+
+```bash
+make check
+```
+
+Runs lint, format-check, typecheck, security, and tests with coverage (>= 80% required). Must pass before every commit.
+
+## Tests
+
+```bash
+make test
+make test-cov
+```
+
+## Repository layout
+
+```
+agent-coding/                        # The repo (= the agent-code project)
+├── README.md                        (this file)
+├── CLAUDE.md                        AI agent index
+├── Makefile                         Single dev interface
+├── pyproject.toml                   uv + ruff + mypy + pytest config
+├── LICENSE                          MIT
+├── Dockerfile, docker-compose.yml   Container build
+├── .agent_docs/                     Detailed docs (loaded on demand)
+├── src/                             Source (NOT a Python package)
+│   ├── agent_code.py                CLI entry point
+│   ├── config.py                    Settings (pydantic-settings)
+│   ├── logging_config.py            Logging setup (rich + file)
+│   └── tracing.py                   OpenTelemetry tracing
+├── tests/                           Pytest suite
+├── specs/                           Specification documents
+│   └── 2026-05-03_21:03:22-agent-code-mvp.md
+└── vars/                            Canonical templates shipped with agent-code
+    ├── project-template/            Python project skeleton (consumed by FR-014)
+    └── ticket-template/             User story templates (consumed by FR-004)
+```
 
 ## Design principles
 
 1. **Safety over speed.** The agent is designed to be slow and correct, not fast and approximate. It must work on on-premise mid-class open-weight models (Qwen 3 32B class), with no dependency on large proprietary models.
 2. **Multi-model orchestration.** Each phase of the pipeline is served by an appropriately sized model declared in a configuration file.
 3. **Test-first, anti-cheat.** End-to-end tests are written in an isolated phase before any implementation. Tests are locked read-only during the implementation loop. The Pull Request gate requires 100% of E2E tests passing, non-negotiable.
-4. **Self-contained projects.** All coding standards, project conventions, and toolchain instructions live in the project's own `CLAUDE.md` and `.agent_docs/`, populated from a canonical Project Reference Template at bootstrap. The agent itself carries no language-specific knowledge.
+4. **Self-contained projects.** All coding standards, project conventions, and toolchain instructions live in the project's own `CLAUDE.md` and `.agent_docs/`, populated from `vars/project-template/` at bootstrap. The agent itself carries no language-specific knowledge.
 5. **Auditable.** Every step of every run is persisted to `.agent_work/<ticket-id>/` and committed to the feature branch as a single audit trail artifact.
 
 ## Pipeline
@@ -21,25 +87,15 @@ ticket -> classify -> DoR check -> comprehend -> plan -> write E2E (locked) ->
 implement loop (multi-approach) -> review (fresh context) -> open PR
 ```
 
-## Scope of MVP
+See `specs/2026-05-03_21:03:22-agent-code-mvp.md` for the complete specification (17 functional requirements, 28 E2E tests, 6 scenarios).
 
-- Python projects only.
-- Manual CLI invocation (`agent-code <ticket>`); event-driven invocation deferred to v2.
-- Greenfield or template-bootstrapped projects only; no legacy support.
+## Documentation
 
-## Repository layout
-
-```
-agent-coding/
-├── README.md           (this file)
-├── specs/              (specification documents)
-└── vars/               (reference assets shipped with agent-code)
-    ├── ticket-template/    (canonical user story Markdown)
-    └── project-template/   (canonical Python project scaffolding,
-                             with all coding rules embedded in CLAUDE.md
-                             and .agent_docs/, no external skill needed)
-```
+- `CLAUDE.md`: AI agent index and project conventions.
+- `.agent_docs/`: detailed documentation, loaded on demand.
+- `specs/`: specification documents under git.
+- `vars/`: canonical templates shipped with the agent.
 
 ## License
 
-To be decided before public implementation begins.
+MIT, see `LICENSE`.

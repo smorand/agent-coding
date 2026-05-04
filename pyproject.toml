@@ -17,6 +17,7 @@ dependencies = [
     "opentelemetry-api>=1.29.0",
     "opentelemetry-sdk>=1.29.0",
     "pyyaml>=6.0.0",
+    "httpx>=0.28.0",
 ]
 
 [dependency-groups]
@@ -78,6 +79,7 @@ known-first-party = [
     "agent_code",
     "config",
     "config_loader",
+    "llm",
     "logging_config",
     "orchestrator",
     "phases",

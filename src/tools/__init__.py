@@ -19,6 +19,14 @@ Public surface:
 
 from __future__ import annotations
 
+from tools.anti_cheat import (
+    BLOCK_REASON,
+    WRITE_TOOL_NAMES,
+    AntiCheatGuard,
+    AuditTrail,
+    BlockedCall,
+    is_test_locked_path,
+)
 from tools.base import (
     DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
     SubprocessOutcome,
@@ -53,9 +61,14 @@ from tools.runner import AsyncSubprocessRunner
 from tools.search import AstGrepTool, FindFilesTool, GrepTool
 
 __all__ = [
+    "BLOCK_REASON",
     "DEFAULT_SUBPROCESS_TIMEOUT_SECONDS",
+    "WRITE_TOOL_NAMES",
+    "AntiCheatGuard",
     "AstGrepTool",
     "AsyncSubprocessRunner",
+    "AuditTrail",
+    "BlockedCall",
     "DeleteFileTool",
     "EditFileTool",
     "FindFilesTool",
@@ -81,4 +94,5 @@ __all__ = [
     "ToolRegistry",
     "ToolResult",
     "WriteFileTool",
+    "is_test_locked_path",
 ]

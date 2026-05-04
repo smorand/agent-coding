@@ -75,6 +75,7 @@ Read these on demand. Each file is focused and under ~250 lines.
 - `.agent_docs/configuration.md`: `config.yaml` schema, lookup order, validation rules, examples.
 - `.agent_docs/preflight.md`: required host binaries, `agent-code check-env` output format, how to add a check.
 - `.agent_docs/llm.md`: `LlmClient` interface, OpenAI-compat client, retry policy, per-phase factory, OTel attributes (no prompts/responses).
+- `.agent_docs/tools.md`: tool Protocol, ToolRegistry, file/search/git/make wrappers, injectable subprocess runner.
 
 ## Where to write what
 

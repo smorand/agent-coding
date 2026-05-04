@@ -11,8 +11,10 @@ from typing import Annotated
 import typer
 
 from config import Settings
+from config_loader import ConfigError, load_config
 from logging_config import setup_logging
-from orchestrator import EXIT_SYSTEM_ERROR, Orchestrator
+from orchestrator import EXIT_OK, EXIT_SYSTEM_ERROR, Orchestrator
+from preflight import format_report, run_preflight
 from tracing import configure_tracing
 
 TEMPLATE_VERSION_FILENAME = ".template_version"
@@ -66,6 +68,30 @@ def run(
     orchestrator = Orchestrator(workspace=workspace_resolved, template_version=template_version)
     exit_code = asyncio.run(orchestrator.run(ticket_id=ticket_id, ticket_path=str(ticket)))
     raise typer.Exit(code=exit_code)
+
+
+@app.command(name="check-env")
+def check_env() -> None:
+    """Run the toolchain pre-flight (FR-015) and exit 0 on success, 3 on blocking failure."""
+    report = run_preflight()
+    typer.echo(format_report(report))
+    raise typer.Exit(code=EXIT_OK if report.is_ok else EXIT_SYSTEM_ERROR)
+
+
+@app.command(name="config-show")
+def config_show(
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", "-c", help="Path to config.yaml (default: standard lookup)"),
+    ] = None,
+) -> None:
+    """Load and validate the configuration, then echo the parsed values."""
+    try:
+        loaded = load_config(config)
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=EXIT_SYSTEM_ERROR) from exc
+    typer.echo(loaded.model_dump_json(indent=2))
 
 
 def _read_template_version(workspace: Path) -> str:

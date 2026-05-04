@@ -28,10 +28,14 @@ uv sync
 ## Usage
 
 ```bash
-make run ARGS='run path/to/ticket.md'
+make run ARGS='check-env'                       # FR-015 toolchain pre-flight
+make run ARGS='config-show --config cfg.yaml'   # FR-002 config validation
+make run ARGS='run path/to/ticket.md'           # main pipeline (skeleton phases)
 ```
 
-The `run` command drives the seven-phase pipeline against a ticket and exits with one of the canonical exit codes (0: completed, 1: DoR failed, 2: implementation exhausted, 3: system error). At this stage every phase is a logging stub; real phase logic lands incrementally. See `.agent_docs/orchestrator.md` for the state machine and persistence model.
+- `check-env` audits the host (Python 3.13+, `make`, `git`, `gh` authenticated, `uv`, `rg`, `ast-grep`). Exits 0 if all good, 3 on any blocking failure with actionable hints. See `.agent_docs/preflight.md`.
+- `config-show` loads `config.yaml` (via `--config`, `AGENT_CODE_CONFIG`, or `~/.config/agent-code/config.yaml`), validates strictly, and echoes the parsed config. See `.agent_docs/configuration.md`.
+- `run` drives the seven-phase pipeline against a ticket and exits with one of the canonical codes (0: completed, 1: DoR failed, 2: implementation exhausted, 3: system error). At this stage every phase is a logging stub; real phase logic lands incrementally. See `.agent_docs/orchestrator.md`.
 
 ## Quality gate
 

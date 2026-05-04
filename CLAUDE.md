@@ -71,6 +71,7 @@ Read these on demand. Each file is focused and under ~250 lines.
 - `.agent_docs/tooling.md`: every tool the agent has access to (read, edit, shell, git, MCP) and when to use each.
 - `.agent_docs/ticket-template.md`: canonical user story Markdown template (DoR validation reference).
 - `.agent_docs/pr-template.md`: canonical Pull Request description template.
+- `.agent_docs/orchestrator.md`: state machine, `State` schema, atomic persistence, resume semantics, phase contract.
 
 ## Where to write what
 

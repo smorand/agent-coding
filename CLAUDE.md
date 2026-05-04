@@ -72,6 +72,8 @@ Read these on demand. Each file is focused and under ~250 lines.
 - `.agent_docs/ticket-template.md`: canonical user story Markdown template (DoR validation reference).
 - `.agent_docs/pr-template.md`: canonical Pull Request description template.
 - `.agent_docs/orchestrator.md`: state machine, `State` schema, atomic persistence, resume semantics, phase contract.
+- `.agent_docs/configuration.md`: `config.yaml` schema, lookup order, validation rules, examples.
+- `.agent_docs/preflight.md`: required host binaries, `agent-code check-env` output format, how to add a check.
 
 ## Where to write what
 

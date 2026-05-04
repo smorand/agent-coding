@@ -22,9 +22,37 @@ def test_run_missing_ticket_exits_with_system_error(tmp_path: Path) -> None:
 def test_run_completes_with_skeleton_pipeline(tmp_path: Path) -> None:
     """A valid ticket runs the skeleton pipeline end-to-end and exits 0."""
     ticket = tmp_path / "demo.md"
-    ticket.write_text("# demo\n", encoding="utf-8")
+    ticket.write_text(
+        (
+            "---\n"
+            "id: demo\n"
+            "title: Demo ticket for the skeleton pipeline\n"
+            "---\n\n"
+            "## Description\n\n"
+            "A demo ticket used to verify the skeleton pipeline runs end to end "
+            "without invoking real model endpoints.\n\n"
+            "## Acceptance Criteria\n\n"
+            "- AC-1: the pipeline reaches the review phase and exits cleanly.\n"
+        ),
+        encoding="utf-8",
+    )
     result = runner.invoke(app, ["run", str(ticket), "--workspace", str(tmp_path)])
     assert result.exit_code == 0
+
+
+def test_run_with_not_ready_ticket_exits_with_dor_failed(tmp_path: Path) -> None:
+    """An incomplete ticket triggers HALT_DOR_FAILED and exits 1 (not 0 or 3)."""
+    ticket = tmp_path / "incomplete.md"
+    ticket.write_text(
+        "---\nid: incomplete\ntitle: Incomplete ticket\n---\n\n## Description\n\nshort.\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["run", str(ticket), "--workspace", str(tmp_path)])
+    assert result.exit_code == 1
+    # The DoR phase appended its comment to the ticket file.
+    body = ticket.read_text(encoding="utf-8")
+    assert "<!-- agent-code DoR report" in body
+    assert "**Status**: NOT_READY" in body
 
 
 def test_ticket_id_from_strips_extension_and_normalizes() -> None:

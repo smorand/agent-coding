@@ -34,9 +34,29 @@ def test_each_phase_name_is_unique() -> None:
 
 
 async def test_each_phase_skeleton_returns_continue_outcome(tmp_path: Path) -> None:
-    """Every skeleton phase returns the default CONTINUE outcome."""
+    """Every PIPELINE phase returns CONTINUE on a minimal valid ticket.
+
+    The DoR phase is the first to have real logic (FR-004): it requires a
+    ticket file that satisfies the canonical template. The other phases are
+    still logging stubs that ignore ticket_path.
+    """
     state = _bare_state()
-    ctx = PhaseContext(state=state, work_dir=tmp_path, ticket_path="dummy.md")
+    ticket = tmp_path / "ticket.md"
+    ticket.write_text(
+        (
+            "---\n"
+            "id: pipe-smoke\n"
+            "title: Smoke ticket for the pipeline test\n"
+            "---\n\n"
+            "## Description\n\n"
+            "A minimal ticket used to exercise the PIPELINE without invoking real "
+            "phase logic beyond DoR validation.\n\n"
+            "## Acceptance Criteria\n\n"
+            "- AC-1: every PIPELINE phase returns the CONTINUE outcome.\n"
+        ),
+        encoding="utf-8",
+    )
+    ctx = PhaseContext(state=state, work_dir=tmp_path, ticket_path=str(ticket))
 
     for phase in PIPELINE:
         await phase.prepare(ctx)

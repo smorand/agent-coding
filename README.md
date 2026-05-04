@@ -27,11 +27,11 @@ uv sync
 
 ## Usage
 
-The CLI surface is currently a placeholder. Once the orchestrator is wired:
-
 ```bash
-make run ARGS='<path-to-ticket.md>'
+make run ARGS='run path/to/ticket.md'
 ```
+
+The `run` command drives the seven-phase pipeline against a ticket and exits with one of the canonical exit codes (0: completed, 1: DoR failed, 2: implementation exhausted, 3: system error). At this stage every phase is a logging stub; real phase logic lands incrementally. See `.agent_docs/orchestrator.md` for the state machine and persistence model.
 
 ## Quality gate
 

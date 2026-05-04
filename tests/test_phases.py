@@ -36,12 +36,16 @@ def test_each_phase_name_is_unique() -> None:
 async def test_each_phase_skeleton_returns_continue_outcome(tmp_path: Path) -> None:
     """Every PIPELINE phase returns CONTINUE on a minimal valid ticket.
 
-    The DoR phase is the first to have real logic (FR-004): it requires a
-    ticket file that satisfies the canonical template. The other phases are
-    still logging stubs that ignore ticket_path.
+    The classification and DoR phases now have real logic. The walk
+    recreates the canonical workspace layout (workspace/.agent_work/<id>/)
+    plus a pyproject.toml so classification detects PYTHON.
     """
     state = _bare_state()
-    ticket = tmp_path / "ticket.md"
+    workspace = tmp_path
+    work_dir = workspace / ".agent_work" / "pipe-smoke"
+    work_dir.mkdir(parents=True)
+    (workspace / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    ticket = workspace / "ticket.md"
     ticket.write_text(
         (
             "---\n"
@@ -56,7 +60,7 @@ async def test_each_phase_skeleton_returns_continue_outcome(tmp_path: Path) -> N
         ),
         encoding="utf-8",
     )
-    ctx = PhaseContext(state=state, work_dir=tmp_path, ticket_path=str(ticket))
+    ctx = PhaseContext(state=state, work_dir=work_dir, ticket_path=str(ticket))
 
     for phase in PIPELINE:
         await phase.prepare(ctx)

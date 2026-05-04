@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from state import PhaseName, State
+    from tools.anti_cheat import AntiCheatGuard
 
 
 class OutcomeKind(StrEnum):
@@ -35,12 +36,15 @@ class PhaseContext:
 
     `state` is the live run state (mutated by the orchestrator after the phase
     returns). `work_dir` is `.agent_work/<ticket_id>/`. `ticket_path` is the
-    path or URL of the user story being processed.
+    path or URL of the user story being processed. `tools` is the anti-cheat
+    guard wrapping the project's tool registry; phases dispatch tool calls
+    through it so the implementation-phase write lock is enforced.
     """
 
     state: State
     work_dir: Path
     ticket_path: str
+    tools: AntiCheatGuard | None = None
 
 
 @dataclass(frozen=True)

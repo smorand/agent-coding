@@ -14,10 +14,13 @@ from typing import TYPE_CHECKING
 from phases import PIPELINE
 from phases.base import OutcomeKind, Phase, PhaseContext, PhaseOutcome
 from state import PhaseName, PhaseRecord, PhaseStatus, RunStatus, State, StateStore
+from tools.anti_cheat import AntiCheatGuard
 from tracing import trace_span
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -36,24 +39,39 @@ class Orchestrator:
     custom phase tuple (for testing). On `run`, it materializes the
     `.agent_work/<ticket_id>/` directory, loads or creates the run state, and
     executes phases in order, persisting state after each phase transition.
+
+    A `tools` argument can be either a `ToolRegistry` (the orchestrator wraps
+    it in an `AntiCheatGuard`) or an `AntiCheatGuard` directly. The guard's
+    `set_phase` is called before every phase and reset to None after the run
+    completes (success, halt, or exception).
     """
 
-    __slots__ = ("_phases", "_template_version", "_workspace")
+    __slots__ = ("_guard", "_phases", "_template_version", "_workspace")
 
     def __init__(
         self,
         workspace: Path,
         template_version: str,
         phases: tuple[Phase, ...] = PIPELINE,
+        *,
+        tools: ToolRegistry | AntiCheatGuard | None = None,
     ) -> None:
         self._workspace = workspace
         self._template_version = template_version
         self._phases = phases
+        self._guard: AntiCheatGuard | None = None
+        if tools is not None:
+            self._guard = tools if isinstance(tools, AntiCheatGuard) else AntiCheatGuard(tools)
 
     @property
     def phases(self) -> tuple[Phase, ...]:
         """The phase tuple this orchestrator will execute."""
         return self._phases
+
+    @property
+    def guard(self) -> AntiCheatGuard | None:
+        """The anti-cheat guard wrapping the tool registry, or None if no tools were provided."""
+        return self._guard
 
     async def run(self, ticket_id: str, ticket_path: str) -> int:
         """Run the pipeline for one ticket and return the process exit code."""
@@ -61,7 +79,11 @@ class Orchestrator:
             work_dir = self._workspace / AGENT_WORK_DIRNAME / ticket_id
             store = StateStore(work_dir)
             state = await self._load_or_create(store, ticket_id)
-            return await self._execute(state, store, work_dir, ticket_path)
+            try:
+                return await self._execute(state, store, work_dir, ticket_path)
+            finally:
+                if self._guard is not None:
+                    self._guard.set_phase(None)
 
     async def _load_or_create(self, store: StateStore, ticket_id: str) -> State:
         if store.exists():
@@ -119,10 +141,17 @@ class Orchestrator:
         ticket_path: str,
         record: PhaseRecord,
     ) -> PhaseOutcome:
-        ctx = PhaseContext(state=state, work_dir=work_dir, ticket_path=ticket_path)
+        ctx = PhaseContext(
+            state=state,
+            work_dir=work_dir,
+            ticket_path=ticket_path,
+            tools=self._guard,
+        )
         record.status = PhaseStatus.RUNNING
         record.started_at = datetime.now(UTC)
         state.current_phase = phase.name
+        if self._guard is not None:
+            self._guard.set_phase(phase.name)
         await store.save(state)
         with trace_span(f"phase.{phase.name.value}"):
             try:

@@ -40,6 +40,8 @@ class Phase(ABC):
     async def checkpoint(self, ctx: PhaseContext) -> None: ...
 ```
 
+`PhaseContext.tools` is the `AntiCheatGuard | None` wrapping the project's `ToolRegistry`. Phases dispatch tool calls through `ctx.tools.call("write_file", path=...)` so the implementation-phase write lock applies. When the orchestrator is constructed without tools (legacy tests), `ctx.tools` is None and phases that need tools must defend.
+
 `prepare` and `checkpoint` are no-op by default; override only when the phase needs to acquire side resources (LSP server, MCP client) or write artifacts (`plan.md`, etc.).
 
 `run` returns a `PhaseOutcome`. The `OutcomeKind` drives the orchestrator:

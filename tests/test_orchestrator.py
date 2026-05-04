@@ -16,6 +16,8 @@ from orchestrator import (
 )
 from phases.base import OutcomeKind, Phase, PhaseContext, PhaseOutcome
 from state import PhaseName, PhaseStatus, RunStatus, StateStore
+from tools.anti_cheat import AntiCheatGuard
+from tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -180,3 +182,99 @@ async def test_halt_ok_returns_exit_zero_even_mid_pipeline(tmp_path: Path) -> No
 
     assert exit_code == EXIT_OK
     assert p2.run_count == 0
+
+
+# ---------------------------------------------------------------------------
+# AntiCheatGuard wiring
+# ---------------------------------------------------------------------------
+
+
+class _PhaseRecorder(Phase):
+    """Phase that records the guard's active phase observed via ctx.tools."""
+
+    def __init__(self, name: PhaseName, observed: list[PhaseName | None]) -> None:
+        self.name = name
+        self._observed = observed
+
+    async def run(self, ctx: PhaseContext) -> PhaseOutcome:
+        # Snapshot the guard's phase at the moment run() executes.
+        if ctx.tools is not None:
+            self._observed.append(ctx.tools._phase)
+        return PhaseOutcome()
+
+
+async def test_orchestrator_sets_phase_on_guard_before_each_phase(tmp_path: Path) -> None:
+    """The guard sees set_phase(<name>) immediately before each phase runs."""
+
+    ticket = _ticket(tmp_path)
+    observed: list[PhaseName | None] = []
+    p1 = _PhaseRecorder(PhaseName.CLASSIFICATION, observed)
+    p2 = _PhaseRecorder(PhaseName.DOR, observed)
+    guard = AntiCheatGuard(ToolRegistry([]))
+    orch = Orchestrator(
+        workspace=tmp_path,
+        template_version="0.1.0",
+        phases=(p1, p2),
+        tools=guard,
+    )
+
+    await orch.run(ticket_id="demo", ticket_path=str(ticket))
+
+    assert observed == [PhaseName.CLASSIFICATION, PhaseName.DOR]
+
+
+async def test_orchestrator_clears_guard_phase_after_run(tmp_path: Path) -> None:
+    """After a successful run, the guard's phase is reset to None."""
+
+    ticket = _ticket(tmp_path)
+    p1, p2 = _two_phase_pipeline()
+    guard = AntiCheatGuard(ToolRegistry([]))
+    orch = Orchestrator(workspace=tmp_path, template_version="0.1.0", phases=(p1, p2), tools=guard)
+
+    await orch.run(ticket_id="demo", ticket_path=str(ticket))
+
+    assert guard._phase is None
+
+
+async def test_orchestrator_clears_guard_phase_even_on_exception(tmp_path: Path) -> None:
+    """A phase exception still resets the guard's phase to None (try/finally)."""
+
+    ticket = _ticket(tmp_path)
+    boom = RaisingPhase(PhaseName.CLASSIFICATION)
+    guard = AntiCheatGuard(ToolRegistry([]))
+    orch = Orchestrator(workspace=tmp_path, template_version="0.1.0", phases=(boom,), tools=guard)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await orch.run(ticket_id="demo", ticket_path=str(ticket))
+
+    assert guard._phase is None
+
+
+async def test_orchestrator_wraps_tool_registry_in_guard_automatically(tmp_path: Path) -> None:
+    """Passing a raw ToolRegistry causes the orchestrator to wrap it in an AntiCheatGuard."""
+
+    p1, p2 = _two_phase_pipeline()
+    orch = Orchestrator(
+        workspace=tmp_path,
+        template_version="0.1.0",
+        phases=(p1, p2),
+        tools=ToolRegistry([]),
+    )
+
+    assert isinstance(orch.guard, AntiCheatGuard)
+
+
+async def test_orchestrator_without_tools_yields_none_guard(tmp_path: Path) -> None:
+    """Backward compatibility: omitting tools leaves the guard as None."""
+    p1, p2 = _two_phase_pipeline()
+    orch = Orchestrator(workspace=tmp_path, template_version="0.1.0", phases=(p1, p2))
+
+    assert orch.guard is None
+    # And ctx.tools observed by phases is None.
+    observed: list[PhaseName | None] = []
+    p_obs = _PhaseRecorder(PhaseName.CLASSIFICATION, observed)
+    orch2 = Orchestrator(workspace=tmp_path, template_version="0.1.0", phases=(p_obs,))
+    ticket = _ticket(tmp_path, name="demo2.md")
+    await orch2.run(ticket_id="demo2", ticket_path=str(ticket))
+    # Recorder only appends when ctx.tools is not None, so the list stays empty.
+    assert observed == []

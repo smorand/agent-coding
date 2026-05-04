@@ -74,6 +74,7 @@ Read these on demand. Each file is focused and under ~250 lines.
 - `.agent_docs/orchestrator.md`: state machine, `State` schema, atomic persistence, resume semantics, phase contract.
 - `.agent_docs/configuration.md`: `config.yaml` schema, lookup order, validation rules, examples.
 - `.agent_docs/preflight.md`: required host binaries, `agent-code check-env` output format, how to add a check.
+- `.agent_docs/llm.md`: `LlmClient` interface, OpenAI-compat client, retry policy, per-phase factory, OTel attributes (no prompts/responses).
 
 ## Where to write what
 

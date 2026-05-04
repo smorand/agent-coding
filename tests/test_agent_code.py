@@ -21,6 +21,7 @@ def test_run_missing_ticket_exits_with_system_error(tmp_path: Path) -> None:
 
 def test_run_completes_with_skeleton_pipeline(tmp_path: Path) -> None:
     """A valid ticket runs the skeleton pipeline end-to-end and exits 0."""
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     ticket = tmp_path / "demo.md"
     ticket.write_text(
         (
@@ -42,6 +43,7 @@ def test_run_completes_with_skeleton_pipeline(tmp_path: Path) -> None:
 
 def test_run_with_not_ready_ticket_exits_with_dor_failed(tmp_path: Path) -> None:
     """An incomplete ticket triggers HALT_DOR_FAILED and exits 1 (not 0 or 3)."""
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     ticket = tmp_path / "incomplete.md"
     ticket.write_text(
         "---\nid: incomplete\ntitle: Incomplete ticket\n---\n\n## Description\n\nshort.\n",

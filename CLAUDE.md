@@ -85,6 +85,9 @@ Read these on demand. Each file is focused and under ~250 lines.
 - `.agent_docs/planning.md`: planning phase (FR-006), three-section LLM response, persisted `plan.md`/`todo.md`/`infra_needs.md`, infra validation against `docker-compose.yml`.
 - `.agent_docs/e2e-writing.md`: E2E writing phase (FR-007), `## FILE:` blocks parsing, `tests/test_*.py` validation, git commit + SHA recorded on state.
 - `.agent_docs/gh-and-pr-template.md`: `gh` CLI wrappers (`gh_pr_create`, `gh_pr_comment`, `gh_issue_comment`, `gh_label_ensure`) and the canonical PR body builder for FR-012 / E2E-024.
+- `.agent_docs/review.md`: reviewer phase (FR-011), four-section LLM response, structured concerns, `review.json`.
+- `.agent_docs/implementation.md`: implementation loop (FR-008), `## FILE:` parser, anti-cheat at parse layer, stagnation detection, `implementation.json`.
+- `.agent_docs/pr-creation.md`: PR creation (FR-012, E2E-024, E2E-026), SHA verification, gh wrapper composition, blocked vs happy path.
 
 ## Where to write what
 

@@ -21,20 +21,31 @@ if TYPE_CHECKING:
 runner = CliRunner()
 
 
+_STUB_PLANNING_RESPONSE = "## PLAN\n\nstub plan.\n\n## TODO\n\n- [ ] stub task\n\n## INFRA NEEDS\n\nNone.\n"
+
+
 @pytest.fixture
 def stub_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub OpenAICompatClient.complete so CLI tests don't need a real LLM endpoint."""
+    """Stub OpenAICompatClient.complete so CLI tests don't need a real LLM endpoint.
+
+    Returns a planning-shaped response when the system prompt looks like the
+    planning phase, otherwise a comprehension-shaped response. Crude but
+    sufficient for the smoke tests.
+    """
 
     async def fake_complete(
         _self: OpenAICompatClient,
-        _messages: Sequence[ChatMessage],
+        messages: Sequence[ChatMessage],
         *,
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> ChatResponse:
         del max_tokens, temperature
+        system_text = next((m.content for m in messages if m.role.value == "system"), "")
+        is_planning = "planning phase" in system_text.lower()
+        content = _STUB_PLANNING_RESPONSE if is_planning else "## Context\n\nstub.\n"
         return ChatResponse(
-            content="## Context\n\nstub.\n",
+            content=content,
             usage=TokenUsage(input_tokens=10, output_tokens=4),
             model="stub-model",
             finish_reason=FinishReason.STOP,

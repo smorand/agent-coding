@@ -11,9 +11,19 @@ from typing import Annotated
 import typer
 
 from config import Settings
-from config_loader import ConfigError, load_config
+from config_loader import ConfigError, find_config_path, load_config
 from logging_config import setup_logging
 from orchestrator import EXIT_OK, EXIT_SYSTEM_ERROR, Orchestrator
+from phases import (
+    ClassificationPhase,
+    ComprehensionPhase,
+    DorPhase,
+    E2eWritingPhase,
+    ImplementationPhase,
+    Phase,
+    PlanningPhase,
+    ReviewPhase,
+)
 from preflight import format_report, run_preflight
 from tracing import configure_tracing
 
@@ -57,6 +67,10 @@ def run(
         Path,
         typer.Option("--workspace", "-w", help="Project root (default: current directory)"),
     ] = Path(),
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", "-c", help="Path to config.yaml (default: standard lookup)"),
+    ] = None,
 ) -> None:
     """Run the seven-phase pipeline against a ticket and exit with the result code."""
     if not ticket.exists():
@@ -65,7 +79,12 @@ def run(
     workspace_resolved = workspace.resolve()
     ticket_id = _ticket_id_from(ticket)
     template_version = _read_template_version(workspace_resolved)
-    orchestrator = Orchestrator(workspace=workspace_resolved, template_version=template_version)
+    phases = _build_pipeline_from_config(config)
+    orchestrator = Orchestrator(
+        workspace=workspace_resolved,
+        template_version=template_version,
+        phases=phases,
+    )
     exit_code = asyncio.run(orchestrator.run(ticket_id=ticket_id, ticket_path=str(ticket)))
     raise typer.Exit(code=exit_code)
 
@@ -92,6 +111,39 @@ def config_show(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=EXIT_SYSTEM_ERROR) from exc
     typer.echo(loaded.model_dump_json(indent=2))
+
+
+def _build_pipeline_from_config(explicit_config: Path | None) -> tuple[Phase, ...]:
+    """Construct the pipeline tuple, configuring phases from `config.yaml` when present.
+
+    Today only ClassificationPhase consumes config (template_path for FR-014
+    bootstrap). Other phases stay at their defaults. Missing or invalid
+    config leaves every phase at its default; the agent still runs but
+    EMPTY workspaces will halt with the standard error.
+    """
+    template_path: Path | None = None
+    resolved = find_config_path(explicit_config)
+    if resolved is not None:
+        try:
+            loaded = load_config(resolved)
+        except ConfigError as exc:
+            logger.warning(
+                "Config at %s could not be loaded (%s); proceeding without bootstrap support.",
+                resolved,
+                exc,
+            )
+        else:
+            template_path = loaded.template_path
+            logger.info("Loaded config from %s (template_path=%s)", resolved, template_path)
+    return (
+        ClassificationPhase(template_path=template_path),
+        DorPhase(),
+        ComprehensionPhase(),
+        PlanningPhase(),
+        E2eWritingPhase(),
+        ImplementationPhase(),
+        ReviewPhase(),
+    )
 
 
 def _read_template_version(workspace: Path) -> str:

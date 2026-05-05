@@ -97,7 +97,7 @@ def test_config_show_renders_loaded_config_as_json(tmp_path: Path) -> None:
     assert '"summarizer"' in result.stdout
 
 
-def _minimal_valid_yaml() -> str:
+def _minimal_valid_yaml(template_path: str = "/opt/agent-code/templates/python") -> str:
     body_phases = ""
     for phase in (
         "classification",
@@ -113,6 +113,88 @@ def _minimal_valid_yaml() -> str:
     return (
         "phases:\n"
         + body_phases
-        + "template_path: /opt/agent-code/templates/python\n"
+        + f"template_path: {template_path}\n"
         + "mcp:\n  context7:\n    url: http://c:1\n  duckduckgo:\n    url: http://d:1\n"
     )
+
+
+def test_run_with_config_bootstraps_empty_workspace_end_to_end(tmp_path: Path) -> None:
+    """An empty workspace + config.yaml with template_path bootstraps and exits 0."""
+    # Build a minimal template OUTSIDE the workspace.
+    template = tmp_path / "template"
+    (template / "src").mkdir(parents=True)
+    (template / "tests").mkdir()
+    (template / ".template_version").write_text("0.1.0\n", encoding="utf-8")
+    (template / "pyproject.toml").write_text("[project]\nname = '__PROJECT_NAME__'\n", encoding="utf-8")
+    (template / "src" / "__PROJECT_ENTRY__.py").write_text("# entry for __PROJECT_NAME__\n", encoding="utf-8")
+    # Workspace: empty except for .git and the ticket.
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+    ticket = workspace / "ticket.md"
+    ticket.write_text(
+        (
+            "---\n"
+            "id: my-feature\n"
+            "title: Bootstrap and run\n"
+            "author: Tester\n"
+            "---\n\n"
+            "## Description\n\n"
+            "A ticket that triggers bootstrap from the configured template.\n\n"
+            "## Acceptance Criteria\n\n"
+            "- AC-1: the workspace gets populated with the template files.\n"
+        ),
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(_minimal_valid_yaml(template_path=str(template)), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(ticket),
+            "--workspace",
+            str(workspace),
+            "--config",
+            str(config_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout + result.stderr
+    # Bootstrap actually happened.
+    assert (workspace / "pyproject.toml").exists()
+    assert (workspace / "src" / "my_feature.py").exists()
+    # Classification report records the bootstrap.
+    classification = workspace / ".agent_work" / "ticket" / "classification.json"
+    assert classification.exists()
+    assert "bootstrap" in classification.read_text(encoding="utf-8")
+
+
+def test_run_with_invalid_config_falls_back_to_default_pipeline(tmp_path: Path) -> None:
+    """If the config is invalid, the run continues with default phases (no template_path)."""
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    ticket = tmp_path / "ticket.md"
+    ticket.write_text(
+        (
+            "---\n"
+            "id: demo\n"
+            "title: Demo with invalid config\n"
+            "---\n\n"
+            "## Description\n\n"
+            "A demo ticket used to verify that an invalid config file is tolerated.\n\n"
+            "## Acceptance Criteria\n\n"
+            "- AC-1: the run still proceeds.\n"
+        ),
+        encoding="utf-8",
+    )
+    bad_config = tmp_path / "bad.yaml"
+    bad_config.write_text("phases: [unclosed", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["run", str(ticket), "--workspace", str(tmp_path), "--config", str(bad_config)],
+    )
+
+    # Run completes because the workspace already has pyproject.toml.
+    assert result.exit_code == 0

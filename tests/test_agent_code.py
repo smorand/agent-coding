@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess  # nosec B404 - test-only fixture helper using static argv
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,7 +22,29 @@ if TYPE_CHECKING:
 runner = CliRunner()
 
 
+def _git_init(workspace: Path) -> None:
+    """Initialize a real git repo so the e2e_writing phase can add+commit."""
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=workspace, check=True)  # nosec B603, B607
+    for key, value in (
+        ("user.email", "test@example.com"),
+        ("user.name", "test-runner"),
+        ("commit.gpgsign", "false"),
+    ):
+        subprocess.run(  # nosec B603, B607
+            ["git", "config", key, value],
+            cwd=workspace,
+            check=True,
+        )
+    subprocess.run(  # nosec B603, B607
+        ["git", "commit", "--allow-empty", "-q", "-m", "init"],
+        cwd=workspace,
+        check=True,
+    )
+
+
 _STUB_PLANNING_RESPONSE = "## PLAN\n\nstub plan.\n\n## TODO\n\n- [ ] stub task\n\n## INFRA NEEDS\n\nNone.\n"
+
+_STUB_E2E_RESPONSE = "## FILE: tests/test_stub.py\n```python\n# AC-1\ndef test_stub() -> None:\n    assert True\n```\n"
 
 
 @pytest.fixture
@@ -41,9 +64,13 @@ def stub_llm(monkeypatch: pytest.MonkeyPatch) -> None:
         temperature: float | None = None,
     ) -> ChatResponse:
         del max_tokens, temperature
-        system_text = next((m.content for m in messages if m.role.value == "system"), "")
-        is_planning = "planning phase" in system_text.lower()
-        content = _STUB_PLANNING_RESPONSE if is_planning else "## Context\n\nstub.\n"
+        system_text = next((m.content for m in messages if m.role.value == "system"), "").lower()
+        if "planning phase" in system_text:
+            content = _STUB_PLANNING_RESPONSE
+        elif "end-to-end test writing" in system_text:
+            content = _STUB_E2E_RESPONSE
+        else:
+            content = "## Context\n\nstub.\n"
         return ChatResponse(
             content=content,
             usage=TokenUsage(input_tokens=10, output_tokens=4),
@@ -172,10 +199,10 @@ def test_run_with_config_bootstraps_empty_workspace_end_to_end(tmp_path: Path, s
     (template / ".template_version").write_text("0.1.0\n", encoding="utf-8")
     (template / "pyproject.toml").write_text("[project]\nname = '__PROJECT_NAME__'\n", encoding="utf-8")
     (template / "src" / "__PROJECT_ENTRY__.py").write_text("# entry for __PROJECT_NAME__\n", encoding="utf-8")
-    # Workspace: empty except for .git and the ticket.
+    # Workspace: empty except for .git (real init, the e2e_writing phase commits) and the ticket.
     workspace = tmp_path / "ws"
     workspace.mkdir()
-    (workspace / ".git").mkdir()
+    _git_init(workspace)
     ticket = workspace / "ticket.md"
     ticket.write_text(
         (

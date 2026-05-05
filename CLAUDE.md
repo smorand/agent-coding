@@ -79,6 +79,7 @@ Read these on demand. Each file is focused and under ~250 lines.
 - `.agent_docs/anti-cheat.md`: phase-aware write lock on `tests/test_*.py`, audit trail, what is and is not enforced.
 - `.agent_docs/dor.md`: Definition of Ready validator and phase, full validation rules, DoR comment format, persisted report.
 - `.agent_docs/classification.md`: project type detection (Python / empty / unsupported), persisted report, halt rules.
+- `.agent_docs/bootstrap.md`: materialize `vars/project-template/` into an empty workspace (FR-014), placeholder substitution, integration with classification.
 
 ## Where to write what
 

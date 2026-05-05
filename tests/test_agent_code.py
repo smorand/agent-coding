@@ -46,6 +46,10 @@ _STUB_PLANNING_RESPONSE = "## PLAN\n\nstub plan.\n\n## TODO\n\n- [ ] stub task\n
 
 _STUB_E2E_RESPONSE = "## FILE: tests/test_stub.py\n```python\n# AC-1\ndef test_stub() -> None:\n    assert True\n```\n"
 
+_STUB_REVIEW_RESPONSE = (
+    "## VERDICT\n\nAPPROVE\n\n## BLOCKING\n\nNone.\n\n## SUGGESTIONS\n\nNone.\n\n## SUMMARY\n\nstub review ok.\n"
+)
+
 
 @pytest.fixture
 def stub_llm(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,6 +73,8 @@ def stub_llm(monkeypatch: pytest.MonkeyPatch) -> None:
             content = _STUB_PLANNING_RESPONSE
         elif "end-to-end test writing" in system_text:
             content = _STUB_E2E_RESPONSE
+        elif "reviewer phase" in system_text:
+            content = _STUB_REVIEW_RESPONSE
         else:
             content = "## Context\n\nstub.\n"
         return ChatResponse(

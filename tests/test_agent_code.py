@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from typer.testing import CliRunner
 
-from agent_code import _ticket_id_from, app
+from agent_code import _build_pipeline_components, _ticket_id_from, app
 
 runner = CliRunner()
 
@@ -198,3 +199,29 @@ def test_run_with_invalid_config_falls_back_to_default_pipeline(tmp_path: Path) 
 
     # Run completes because the workspace already has pyproject.toml.
     assert result.exit_code == 0
+
+
+def test_pipeline_components_without_config_has_no_tools() -> None:
+    """Without a config file, the registry and factory are both None."""
+    components = _build_pipeline_components(Path("/this/path/should/not/exist.yaml"))
+
+    assert components.tools is None
+    assert components.mcp_factory is None
+    assert len(components.phases) == 7
+
+
+def test_pipeline_components_with_valid_config_registers_mcp_tools(tmp_path: Path) -> None:
+    """A valid config produces a registry containing the three MCP tools."""
+    template = tmp_path / "template"
+    template.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(_minimal_valid_yaml(template_path=str(template)), encoding="utf-8")
+
+    components = _build_pipeline_components(config_path)
+    try:
+        assert components.tools is not None
+        assert components.mcp_factory is not None
+        assert components.tools.names == ("query_docs", "resolve_library_id", "search_web")
+    finally:
+        if components.mcp_factory is not None:
+            asyncio.run(components.mcp_factory.aclose())

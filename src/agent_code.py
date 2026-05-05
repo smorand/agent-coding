@@ -5,14 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from config import Settings
-from config_loader import ConfigError, find_config_path, load_config
+from config_loader import AgentCodeConfig, ConfigError, find_config_path, load_config
 from logging_config import setup_logging
+from mcp.factory import McpClientFactory
 from orchestrator import EXIT_OK, EXIT_SYSTEM_ERROR, Orchestrator
 from phases import (
     ClassificationPhase,
@@ -25,6 +27,7 @@ from phases import (
     ReviewPhase,
 )
 from preflight import format_report, run_preflight
+from tools.registry import ToolRegistry
 from tracing import configure_tracing
 
 TEMPLATE_VERSION_FILENAME = ".template_version"
@@ -79,13 +82,16 @@ def run(
     workspace_resolved = workspace.resolve()
     ticket_id = _ticket_id_from(ticket)
     template_version = _read_template_version(workspace_resolved)
-    phases = _build_pipeline_from_config(config)
-    orchestrator = Orchestrator(
-        workspace=workspace_resolved,
-        template_version=template_version,
-        phases=phases,
+    components = _build_pipeline_components(config)
+    exit_code = asyncio.run(
+        _run_pipeline(
+            components=components,
+            workspace=workspace_resolved,
+            template_version=template_version,
+            ticket_id=ticket_id,
+            ticket_path=str(ticket),
+        )
     )
-    exit_code = asyncio.run(orchestrator.run(ticket_id=ticket_id, ticket_path=str(ticket)))
     raise typer.Exit(code=exit_code)
 
 
@@ -113,29 +119,41 @@ def config_show(
     typer.echo(loaded.model_dump_json(indent=2))
 
 
-def _build_pipeline_from_config(explicit_config: Path | None) -> tuple[Phase, ...]:
-    """Construct the pipeline tuple, configuring phases from `config.yaml` when present.
+@dataclass(frozen=True)
+class PipelineComponents:
+    """Bundle of objects needed to run the orchestrator with optional cleanup.
 
-    Today only ClassificationPhase consumes config (template_path for FR-014
-    bootstrap). Other phases stay at their defaults. Missing or invalid
-    config leaves every phase at its default; the agent still runs but
-    EMPTY workspaces will halt with the standard error.
+    `phases` is always populated. `tools` is a `ToolRegistry` carrying the
+    MCP tools when the config is loaded successfully (None otherwise).
+    `mcp_factory` is the lifecycle owner of the MCP HTTP connections; the
+    caller is responsible for `aclose()` after the run.
     """
-    template_path: Path | None = None
-    resolved = find_config_path(explicit_config)
-    if resolved is not None:
-        try:
-            loaded = load_config(resolved)
-        except ConfigError as exc:
-            logger.warning(
-                "Config at %s could not be loaded (%s); proceeding without bootstrap support.",
-                resolved,
-                exc,
-            )
-        else:
-            template_path = loaded.template_path
-            logger.info("Loaded config from %s (template_path=%s)", resolved, template_path)
-    return (
+
+    phases: tuple[Phase, ...]
+    tools: ToolRegistry | None
+    mcp_factory: McpClientFactory | None
+
+
+def _build_pipeline_components(explicit_config: Path | None) -> PipelineComponents:
+    """Construct the pipeline phases and tool registry from `config.yaml`.
+
+    When config is loaded successfully:
+    - `template_path` is passed to `ClassificationPhase` (FR-014 bootstrap).
+    - The `mcp` section produces an `McpClientFactory`, which builds the
+      Context7 / DuckDuckGo tools and registers them in a `ToolRegistry`.
+
+    When config is missing or invalid: every phase is at its default and
+    the registry is None. The agent still runs but EMPTY workspaces halt
+    and MCP-dependent phases will not have docs/search tools.
+    """
+    loaded = _load_config_safely(explicit_config)
+    template_path = loaded.template_path if loaded is not None else None
+    factory: McpClientFactory | None = None
+    registry: ToolRegistry | None = None
+    if loaded is not None:
+        factory = McpClientFactory.from_config(loaded.mcp)
+        registry = ToolRegistry(factory.build_tools())
+    phases: tuple[Phase, ...] = (
         ClassificationPhase(template_path=template_path),
         DorPhase(),
         ComprehensionPhase(),
@@ -144,6 +162,53 @@ def _build_pipeline_from_config(explicit_config: Path | None) -> tuple[Phase, ..
         ImplementationPhase(),
         ReviewPhase(),
     )
+    return PipelineComponents(phases=phases, tools=registry, mcp_factory=factory)
+
+
+def _load_config_safely(explicit_config: Path | None) -> AgentCodeConfig | None:
+    """Resolve and load the config; return None on missing/invalid (with a warning)."""
+    resolved = find_config_path(explicit_config)
+    if resolved is None:
+        return None
+    try:
+        loaded = load_config(resolved)
+    except ConfigError as exc:
+        logger.warning(
+            "Config at %s could not be loaded (%s); proceeding with defaults.",
+            resolved,
+            exc,
+        )
+        return None
+    logger.info(
+        "Loaded config from %s (template_path=%s, mcp.context7=%s, mcp.duckduckgo=%s)",
+        resolved,
+        loaded.template_path,
+        loaded.mcp.context7.url,
+        loaded.mcp.duckduckgo.url,
+    )
+    return loaded
+
+
+async def _run_pipeline(
+    *,
+    components: PipelineComponents,
+    workspace: Path,
+    template_version: str,
+    ticket_id: str,
+    ticket_path: str,
+) -> int:
+    """Run the orchestrator, ensuring the MCP factory is closed afterward."""
+    orchestrator = Orchestrator(
+        workspace=workspace,
+        template_version=template_version,
+        phases=components.phases,
+        tools=components.tools,
+    )
+    try:
+        return await orchestrator.run(ticket_id=ticket_id, ticket_path=ticket_path)
+    finally:
+        if components.mcp_factory is not None:
+            await components.mcp_factory.aclose()
 
 
 def _read_template_version(workspace: Path) -> str:

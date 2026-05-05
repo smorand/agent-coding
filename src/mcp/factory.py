@@ -14,13 +14,14 @@ from typing import TYPE_CHECKING
 from mcp.context7 import Context7McpClient
 from mcp.duckduckgo import DuckDuckGoMcpClient
 from mcp.http_client import AsyncMcpHttpClient
-from mcp.tools import QueryDocsTool, ResolveLibraryIdTool, SearchWebTool, make_mcp_tools
+from mcp.tools import make_mcp_tools
 
 if TYPE_CHECKING:
     import httpx
 
     from config_loader import McpConfig
     from llm.retry import RetryPolicy
+    from tools.base import Tool
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class McpClientFactory:
             duckduckgo=DuckDuckGoMcpClient(duckduckgo_http),
         )
 
-    def build_tools(self) -> tuple[QueryDocsTool, ResolveLibraryIdTool, SearchWebTool]:
+    def build_tools(self) -> tuple[Tool, ...]:
         """Return the three MCP tool adapters for the ToolRegistry."""
         return make_mcp_tools(self._context7, self._duckduckgo)
 

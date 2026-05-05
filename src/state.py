@@ -35,6 +35,7 @@ class PhaseName(StrEnum):
     E2E_WRITING = "e2e_writing"
     IMPLEMENTATION = "implementation"
     REVIEW = "review"
+    PR_CREATION = "pr_creation"
 
 
 class PhaseStatus(StrEnum):

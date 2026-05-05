@@ -34,6 +34,7 @@ from tracing import configure_tracing
 COMPREHENSION_PHASE_NAME = "comprehension"
 PLANNING_PHASE_NAME = "planning"
 E2E_WRITING_PHASE_NAME = "e2e_writing"
+REVIEW_PHASE_NAME = "review"
 
 TEMPLATE_VERSION_FILENAME = ".template_version"
 DEFAULT_TEMPLATE_VERSION = "unknown"
@@ -168,6 +169,7 @@ def _build_pipeline_components(explicit_config: Path | None) -> PipelineComponen
     comprehension_llm = llm_factory.for_phase(COMPREHENSION_PHASE_NAME) if llm_factory else None
     planning_llm = llm_factory.for_phase(PLANNING_PHASE_NAME) if llm_factory else None
     e2e_writing_llm = llm_factory.for_phase(E2E_WRITING_PHASE_NAME) if llm_factory else None
+    review_llm = llm_factory.for_phase(REVIEW_PHASE_NAME) if llm_factory else None
     phases: tuple[Phase, ...] = (
         ClassificationPhase(template_path=template_path),
         DorPhase(),
@@ -175,7 +177,7 @@ def _build_pipeline_components(explicit_config: Path | None) -> PipelineComponen
         PlanningPhase(llm_client=planning_llm),
         E2eWritingPhase(llm_client=e2e_writing_llm),
         ImplementationPhase(),
-        ReviewPhase(),
+        ReviewPhase(llm_client=review_llm),
     )
     return PipelineComponents(
         phases=phases,

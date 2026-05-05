@@ -80,6 +80,7 @@ Read these on demand. Each file is focused and under ~250 lines.
 - `.agent_docs/dor.md`: Definition of Ready validator and phase, full validation rules, DoR comment format, persisted report.
 - `.agent_docs/classification.md`: project type detection (Python / empty / unsupported), persisted report, halt rules.
 - `.agent_docs/bootstrap.md`: materialize `vars/project-template/` into an empty workspace (FR-014), placeholder substitution, integration with classification.
+- `.agent_docs/mcp.md`: MCP clients for Context7 (library docs) and DuckDuckGo (web search), JSON-RPC transport, Tool adapters, factory wiring.
 
 ## Where to write what
 

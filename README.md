@@ -67,7 +67,11 @@ agent-coding/                        # The repo (= the agent-code project)
 │   ├── agent_code.py                CLI entry point
 │   ├── config.py                    Settings (pydantic-settings)
 │   ├── logging_config.py            Logging setup (rich + file)
-│   └── tracing.py                   OpenTelemetry tracing
+│   ├── tracing.py                   OpenTelemetry tracing
+│   ├── llm/                         LLM client (OpenAI-compat, retry, factory)
+│   ├── mcp/                         MCP clients (Context7 docs, DuckDuckGo search)
+│   ├── phases/                      Seven pipeline phases
+│   └── tools/                       Tool registry (file, search, git, make)
 ├── tests/                           Pytest suite
 ├── specs/                           Specification documents
 │   └── 2026-05-03_21:03:22-agent-code-mvp.md

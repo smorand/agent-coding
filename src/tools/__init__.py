@@ -43,6 +43,12 @@ from tools.files import (
     ReadFileTool,
     WriteFileTool,
 )
+from tools.gh import (
+    GhIssueCommentTool,
+    GhLabelEnsureTool,
+    GhPrCommentTool,
+    GhPrCreateTool,
+)
 from tools.git_ops import (
     GitAddTool,
     GitBlameTool,
@@ -72,6 +78,10 @@ __all__ = [
     "DeleteFileTool",
     "EditFileTool",
     "FindFilesTool",
+    "GhIssueCommentTool",
+    "GhLabelEnsureTool",
+    "GhPrCommentTool",
+    "GhPrCreateTool",
     "GitAddTool",
     "GitBlameTool",
     "GitBranchCreateTool",

@@ -52,6 +52,8 @@ _STUB_REVIEW_RESPONSE = (
     "## VERDICT\n\nAPPROVE\n\n## BLOCKING\n\nNone.\n\n## SUGGESTIONS\n\nNone.\n\n## SUMMARY\n\nstub review ok.\n"
 )
 
+_STUB_IMPLEMENTATION_RESPONSE = "## FILE: src/stub_impl.py\n```python\nx = 1\n```\n"
+
 
 @pytest.fixture
 def stub_llm(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -77,6 +79,8 @@ def stub_llm(monkeypatch: pytest.MonkeyPatch) -> None:
             content = _STUB_E2E_RESPONSE
         elif "reviewer phase" in system_text:
             content = _STUB_REVIEW_RESPONSE
+        elif "implementation phase" in system_text:
+            content = _STUB_IMPLEMENTATION_RESPONSE
         else:
             content = "## Context\n\nstub.\n"
         return ChatResponse(
@@ -114,6 +118,9 @@ def stub_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
             return SubprocessOutcome(returncode=0, stdout="", stderr="")
         if argv_list[:2] == ["git", "push"]:
             return SubprocessOutcome(returncode=0, stdout="", stderr="")
+        if argv_list[:1] == ["make"]:
+            # Implementation loop: pretend `make check` succeeded on the first try.
+            return SubprocessOutcome(returncode=0, stdout="ok\n", stderr="")
         return await real_run(self, argv, cwd=cwd, timeout=timeout, input_text=input_text)
 
     monkeypatch.setattr(AsyncSubprocessRunner, "run", fake_run)

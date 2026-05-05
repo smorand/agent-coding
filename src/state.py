@@ -85,6 +85,7 @@ class State(BaseModel):
     run_status: RunStatus = RunStatus.RUNNING
     exit_code: int | None = None
     e2e_commit_sha: str | None = None
+    implementation_commit_sha: str | None = None
     review_verdict: str | None = None
     pr_url: str | None = None
 

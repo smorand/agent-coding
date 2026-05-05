@@ -56,8 +56,11 @@ When the workspace is EMPTY but `template_path` is None (default), the phase hal
 
 - **`uv sync`** after materialization: out of scope; needs the tool registry wiring. The materialized project has a `pyproject.toml`; the operator runs `uv sync` themselves for now.
 - **Initial git commit**: out of scope; needs the git tools wiring. The materialized files are uncommitted.
-- **CLI wiring of `template_path`**: today `agent-code run` does not pass a `template_path` to the orchestrator. Empty workspaces therefore halt with the clear error above. The wiring lands when the CLI consumes `AgentCodeConfig.template_path` (small follow-up).
 - **Idempotency on re-run**: if the workspace is already populated after a previous bootstrap, the classification will detect PYTHON and skip the bootstrap path. Re-running on a half-bootstrapped workspace is undefined behavior; cleaning the workspace first is recommended.
+
+## CLI wiring (delivered by a follow-up PR)
+
+`agent-code run --config <path>` (or any of the standard config lookup paths) loads `AgentCodeConfig.template_path` and passes it to the classification phase. Empty workspace + valid config + valid template_path = bootstrap end-to-end. See `src/agent_code.py::_build_pipeline_from_config`.
 
 ## Testing
 

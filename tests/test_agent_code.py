@@ -13,6 +13,8 @@ from typer.testing import CliRunner
 from agent_code import _build_pipeline_components, _ticket_id_from, app
 from llm.base import ChatResponse, FinishReason, TokenUsage
 from llm.openai_compat import OpenAICompatClient
+from tools.base import SubprocessOutcome
+from tools.runner import AsyncSubprocessRunner
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -86,6 +88,35 @@ def stub_llm(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(OpenAICompatClient, "complete", fake_complete)
+
+
+@pytest.fixture
+def stub_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Intercept `git push` and any `gh ...` invocations made via AsyncSubprocessRunner.
+
+    Other git invocations (init, add, commit, diff, status) still hit the real
+    binary on the test workspace.
+    """
+    real_run = AsyncSubprocessRunner.run
+
+    async def fake_run(
+        self: AsyncSubprocessRunner,
+        argv: Sequence[str],
+        *,
+        cwd: Path | None = None,
+        timeout: float = 30.0,
+        input_text: str | None = None,
+    ) -> SubprocessOutcome:
+        argv_list = list(argv)
+        if argv_list[:1] == ["gh"]:
+            if argv_list[1:3] == ["pr", "create"]:
+                return SubprocessOutcome(returncode=0, stdout="https://github.com/x/y/pull/123\n", stderr="")
+            return SubprocessOutcome(returncode=0, stdout="", stderr="")
+        if argv_list[:2] == ["git", "push"]:
+            return SubprocessOutcome(returncode=0, stdout="", stderr="")
+        return await real_run(self, argv, cwd=cwd, timeout=timeout, input_text=input_text)
+
+    monkeypatch.setattr(AsyncSubprocessRunner, "run", fake_run)
 
 
 def test_run_missing_ticket_exits_with_system_error(tmp_path: Path) -> None:
@@ -195,9 +226,11 @@ def _minimal_valid_yaml(template_path: str = "/opt/agent-code/templates/python")
     )
 
 
-def test_run_with_config_bootstraps_empty_workspace_end_to_end(tmp_path: Path, stub_llm: None) -> None:
+def test_run_with_config_bootstraps_empty_workspace_end_to_end(
+    tmp_path: Path, stub_llm: None, stub_subprocess: None
+) -> None:
     """An empty workspace + config.yaml with template_path bootstraps and exits 0."""
-    del stub_llm
+    del stub_llm, stub_subprocess
     # Build a minimal template OUTSIDE the workspace.
     template = tmp_path / "template"
     (template / "src").mkdir(parents=True)
@@ -284,7 +317,7 @@ def test_pipeline_components_without_config_has_no_tools() -> None:
 
     assert components.tools is None
     assert components.mcp_factory is None
-    assert len(components.phases) == 7
+    assert len(components.phases) == 8
 
 
 def test_pipeline_components_with_valid_config_registers_mcp_tools(tmp_path: Path) -> None:

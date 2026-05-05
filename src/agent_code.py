@@ -25,6 +25,7 @@ from phases import (
     ImplementationPhase,
     Phase,
     PlanningPhase,
+    PrCreationPhase,
     ReviewPhase,
 )
 from preflight import format_report, run_preflight
@@ -178,6 +179,7 @@ def _build_pipeline_components(explicit_config: Path | None) -> PipelineComponen
         E2eWritingPhase(llm_client=e2e_writing_llm),
         ImplementationPhase(),
         ReviewPhase(llm_client=review_llm),
+        PrCreationPhase(),
     )
     return PipelineComponents(
         phases=phases,

@@ -1,9 +1,7 @@
 """Phase implementations for the agent-code orchestrator.
 
 The pipeline executes phases in the order defined by `PIPELINE`. Each phase
-implements the `Phase` interface defined in `phases.base`. Phase classes are
-intentionally minimal at the skeleton stage: each one logs and returns
-`COMPLETED`. Real logic is added incrementally as separate features.
+implements the `Phase` interface defined in `phases.base`.
 """
 
 from __future__ import annotations
@@ -15,6 +13,7 @@ from phases.dor import DorPhase
 from phases.e2e_writing import E2eWritingPhase
 from phases.implementation import ImplementationPhase
 from phases.planning import PlanningPhase
+from phases.pr_creation import PrCreationPhase
 from phases.review import ReviewPhase
 
 PIPELINE: tuple[Phase, ...] = (
@@ -25,6 +24,7 @@ PIPELINE: tuple[Phase, ...] = (
     E2eWritingPhase(),
     ImplementationPhase(),
     ReviewPhase(),
+    PrCreationPhase(),
 )
 
 __all__ = [
@@ -38,5 +38,6 @@ __all__ = [
     "PhaseContext",
     "PhaseOutcome",
     "PlanningPhase",
+    "PrCreationPhase",
     "ReviewPhase",
 ]

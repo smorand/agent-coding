@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_pipeline_has_seven_phases_in_canonical_order() -> None:
-    """The PIPELINE tuple contains the seven phases in spec order."""
+def test_pipeline_has_phases_in_canonical_order() -> None:
+    """The PIPELINE tuple contains every phase in spec order, ending with PR creation."""
     expected = (
         PhaseName.CLASSIFICATION,
         PhaseName.DOR,
@@ -23,6 +23,7 @@ def test_pipeline_has_seven_phases_in_canonical_order() -> None:
         PhaseName.E2E_WRITING,
         PhaseName.IMPLEMENTATION,
         PhaseName.REVIEW,
+        PhaseName.PR_CREATION,
     )
     assert tuple(phase.name for phase in PIPELINE) == expected
 
@@ -34,11 +35,11 @@ def test_each_phase_name_is_unique() -> None:
 
 
 async def test_each_phase_skeleton_returns_continue_outcome(tmp_path: Path) -> None:
-    """Every PIPELINE phase returns CONTINUE on a minimal valid ticket.
+    """Phases without an injected LLM client (or with a no-op default) return CONTINUE.
 
-    The classification and DoR phases now have real logic. The walk
-    recreates the canonical workspace layout (workspace/.agent_work/<id>/)
-    plus a pyproject.toml so classification detects PYTHON.
+    PR_CREATION is excluded: it now has real logic that requires a git remote
+    and a `gh` binary, which are out of scope for this smoke test. Other
+    phases keep their default skeleton path when no LLM client is configured.
     """
     state = _bare_state()
     workspace = tmp_path
@@ -63,6 +64,8 @@ async def test_each_phase_skeleton_returns_continue_outcome(tmp_path: Path) -> N
     ctx = PhaseContext(state=state, work_dir=work_dir, ticket_path=str(ticket))
 
     for phase in PIPELINE:
+        if phase.name == PhaseName.PR_CREATION:
+            continue
         await phase.prepare(ctx)
         outcome = await phase.run(ctx)
         await phase.checkpoint(ctx)

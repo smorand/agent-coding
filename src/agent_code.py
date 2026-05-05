@@ -32,6 +32,7 @@ from tools.registry import ToolRegistry
 from tracing import configure_tracing
 
 COMPREHENSION_PHASE_NAME = "comprehension"
+PLANNING_PHASE_NAME = "planning"
 
 TEMPLATE_VERSION_FILENAME = ".template_version"
 DEFAULT_TEMPLATE_VERSION = "unknown"
@@ -164,11 +165,12 @@ def _build_pipeline_components(explicit_config: Path | None) -> PipelineComponen
         registry = ToolRegistry(mcp_factory.build_tools())
         llm_factory = PhaseLlmFactory(loaded)
     comprehension_llm = llm_factory.for_phase(COMPREHENSION_PHASE_NAME) if llm_factory else None
+    planning_llm = llm_factory.for_phase(PLANNING_PHASE_NAME) if llm_factory else None
     phases: tuple[Phase, ...] = (
         ClassificationPhase(template_path=template_path),
         DorPhase(),
         ComprehensionPhase(llm_client=comprehension_llm),
-        PlanningPhase(),
+        PlanningPhase(llm_client=planning_llm),
         E2eWritingPhase(),
         ImplementationPhase(),
         ReviewPhase(),

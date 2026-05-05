@@ -12,10 +12,10 @@ under the snake_case names used by the phases:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from mcp.base import McpError
-from tools.base import ToolResult
+from tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:
     from mcp.context7 import Context7McpClient
@@ -23,22 +23,29 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_DOCS_TOKENS = 5000
+DEFAULT_SEARCH_RESULTS = 10
 
-class QueryDocsTool:
+
+def _require_str(kwargs: dict[str, Any], key: str) -> str | ToolResult:
+    """Extract a non-empty string from kwargs or return a ToolResult error."""
+    value = kwargs.get(key)
+    if not isinstance(value, str) or not value:
+        return ToolResult(ok=False, error=f"argument {key!r}: required non-empty string")
+    return value
+
+
+class QueryDocsTool(Tool):
     """Fetch up-to-date documentation for a library via Context7.
 
-    Parameters
-    ----------
-    library:
-        A Context7-compatible library ID (e.g. `/uv`, `/httpx`).
-    topic:
-        Optional documentation topic to scope the query.
-    tokens:
-        Maximum documentation length (default: 5000).
+    Expected kwargs (passed by the registry):
+    - `library` (str, required): a Context7-compatible library ID.
+    - `topic` (str, optional): scope the query to a topic.
+    - `tokens` (int, optional): max documentation length (default 5000).
     """
 
-    name: str = "query_docs"
-    description: str = (
+    name = "query_docs"
+    description = (
         "Fetch up-to-date documentation for a Python library via Context7. "
         "Pass the Context7 library ID (use resolve_library_id first if unknown). "
         "Optionally scope with a topic."
@@ -49,8 +56,13 @@ class QueryDocsTool:
     def __init__(self, context7: Context7McpClient) -> None:
         self._context7 = context7
 
-    async def call(self, *, library: str, topic: str = "", tokens: int = 5000) -> ToolResult:
+    async def call(self, **kwargs: Any) -> ToolResult:
         """Fetch library docs. Returns ToolResult with the documentation text."""
+        library = _require_str(kwargs, "library")
+        if isinstance(library, ToolResult):
+            return library
+        topic = kwargs.get("topic", "") or ""
+        tokens = kwargs.get("tokens", DEFAULT_DOCS_TOKENS)
         try:
             result = await self._context7.query_docs(library, topic=topic, tokens=tokens)
         except McpError as exc:
@@ -61,17 +73,15 @@ class QueryDocsTool:
         return ToolResult(ok=True, output=result.text)
 
 
-class ResolveLibraryIdTool:
+class ResolveLibraryIdTool(Tool):
     """Resolve the canonical Context7 library ID for a package name.
 
-    Parameters
-    ----------
-    library:
-        The library name (e.g. `httpx`, `pydantic`).
+    Expected kwargs:
+    - `library` (str, required): the library name (e.g. `httpx`, `pydantic`).
     """
 
-    name: str = "resolve_library_id"
-    description: str = (
+    name = "resolve_library_id"
+    description = (
         "Find the canonical Context7-compatible library ID for a Python package. "
         "Use this before query_docs when you only know the package name."
     )
@@ -81,8 +91,11 @@ class ResolveLibraryIdTool:
     def __init__(self, context7: Context7McpClient) -> None:
         self._context7 = context7
 
-    async def call(self, *, library: str) -> ToolResult:
+    async def call(self, **kwargs: Any) -> ToolResult:
         """Resolve library name to a Context7 ID."""
+        library = _require_str(kwargs, "library")
+        if isinstance(library, ToolResult):
+            return library
         try:
             result = await self._context7.resolve_library_id(library)
         except McpError as exc:
@@ -93,29 +106,28 @@ class ResolveLibraryIdTool:
         return ToolResult(ok=True, output=result.text)
 
 
-class SearchWebTool:
+class SearchWebTool(Tool):
     """Search the web via DuckDuckGo.
 
-    Parameters
-    ----------
-    query:
-        The search query.
-    max_results:
-        Maximum number of results to return (default: 10).
+    Expected kwargs:
+    - `query` (str, required): the search query.
+    - `max_results` (int, optional): maximum results to return (default 10).
     """
 
-    name: str = "search_web"
-    description: str = (
-        "Search the web using DuckDuckGo. Use as a last resort when local docs and Context7 are insufficient."
-    )
+    name = "search_web"
+    description = "Search the web using DuckDuckGo. Use as a last resort when local docs and Context7 are insufficient."
 
     __slots__ = ("_duckduckgo",)
 
     def __init__(self, duckduckgo: DuckDuckGoMcpClient) -> None:
         self._duckduckgo = duckduckgo
 
-    async def call(self, *, query: str, max_results: int = 10) -> ToolResult:
+    async def call(self, **kwargs: Any) -> ToolResult:
         """Search the web. Returns ToolResult with search results."""
+        query = _require_str(kwargs, "query")
+        if isinstance(query, ToolResult):
+            return query
+        max_results = kwargs.get("max_results", DEFAULT_SEARCH_RESULTS)
         try:
             result = await self._duckduckgo.search_web(query, max_results=max_results)
         except McpError as exc:
@@ -129,7 +141,7 @@ class SearchWebTool:
 def make_mcp_tools(
     context7: Context7McpClient,
     duckduckgo: DuckDuckGoMcpClient,
-) -> tuple[QueryDocsTool, ResolveLibraryIdTool, SearchWebTool]:
+) -> tuple[Tool, ...]:
     """Build the three MCP tool adapters ready to register in a ToolRegistry."""
     return (
         QueryDocsTool(context7),

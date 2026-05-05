@@ -94,15 +94,26 @@ The `url` field is the exact POST target. No path suffix is added.
 |---|---|---|
 | `search_web(query, max_results)` | `search` | `query`, `maxResults` |
 
-## Wiring into the pipeline (pending)
+## Wiring into the pipeline
 
-`McpClientFactory` is not yet wired into `_build_pipeline_from_config`. The
-follow-up PR will:
-1. Construct `McpClientFactory.from_config(config.mcp)` when the config has
-   an `mcp` section.
-2. Inject `factory.build_tools()` into the `ToolRegistry` alongside the
-   existing file/git/search tools.
-3. Call `factory.aclose()` after the orchestrator run completes.
+`agent_code._build_pipeline_components(explicit_config)` returns a
+`PipelineComponents(phases, tools, mcp_factory)` triple:
+
+1. When config loads successfully, `McpClientFactory.from_config(config.mcp)`
+   builds both clients; `factory.build_tools()` produces the three
+   `Tool` adapters; `ToolRegistry(factory.build_tools())` wraps them.
+2. The `Orchestrator` is then constructed with `tools=registry`; the
+   orchestrator wraps it in an `AntiCheatGuard` and exposes it on
+   `PhaseContext.tools` to every phase.
+3. `_run_pipeline` closes the factory in a `finally` block after the
+   orchestrator returns, regardless of success, halt, or exception.
+
+When the config is missing or invalid, `tools` and `mcp_factory` are both
+None; phases run without MCP tools and `aclose()` is skipped.
+
+The MCP tool `call` signatures are `**kwargs: Any` (matching the
+`Tool` Protocol) and validate `library`/`query` internally. Callers reach
+them via `ctx.tools.call("query_docs", library="/httpx")`.
 
 ## Testing
 

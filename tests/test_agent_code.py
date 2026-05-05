@@ -4,12 +4,44 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import pytest
 from typer.testing import CliRunner
 
 from agent_code import _build_pipeline_components, _ticket_id_from, app
+from llm.base import ChatResponse, FinishReason, TokenUsage
+from llm.openai_compat import OpenAICompatClient
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from llm.base import ChatMessage
 
 runner = CliRunner()
+
+
+@pytest.fixture
+def stub_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub OpenAICompatClient.complete so CLI tests don't need a real LLM endpoint."""
+
+    async def fake_complete(
+        _self: OpenAICompatClient,
+        _messages: Sequence[ChatMessage],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> ChatResponse:
+        del max_tokens, temperature
+        return ChatResponse(
+            content="## Context\n\nstub.\n",
+            usage=TokenUsage(input_tokens=10, output_tokens=4),
+            model="stub-model",
+            finish_reason=FinishReason.STOP,
+            duration_ms=1.0,
+        )
+
+    monkeypatch.setattr(OpenAICompatClient, "complete", fake_complete)
 
 
 def test_run_missing_ticket_exits_with_system_error(tmp_path: Path) -> None:
@@ -119,8 +151,9 @@ def _minimal_valid_yaml(template_path: str = "/opt/agent-code/templates/python")
     )
 
 
-def test_run_with_config_bootstraps_empty_workspace_end_to_end(tmp_path: Path) -> None:
+def test_run_with_config_bootstraps_empty_workspace_end_to_end(tmp_path: Path, stub_llm: None) -> None:
     """An empty workspace + config.yaml with template_path bootstraps and exits 0."""
+    del stub_llm
     # Build a minimal template OUTSIDE the workspace.
     template = tmp_path / "template"
     (template / "src").mkdir(parents=True)

@@ -81,6 +81,7 @@ Read these on demand. Each file is focused and under ~250 lines.
 - `.agent_docs/classification.md`: project type detection (Python / empty / unsupported), persisted report, halt rules.
 - `.agent_docs/bootstrap.md`: materialize `vars/project-template/` into an empty workspace (FR-014), placeholder substitution, integration with classification.
 - `.agent_docs/mcp.md`: MCP clients for Context7 (library docs) and DuckDuckGo (web search), JSON-RPC transport, Tool adapters, factory wiring.
+- `.agent_docs/comprehension.md`: comprehension phase (FR-005), source collection, LLM prompt, persisted `comprehension.json`.
 
 ## Where to write what
 

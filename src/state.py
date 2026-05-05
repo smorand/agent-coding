@@ -83,6 +83,7 @@ class State(BaseModel):
     phases: list[PhaseRecord] = Field(default_factory=list)
     run_status: RunStatus = RunStatus.RUNNING
     exit_code: int | None = None
+    e2e_commit_sha: str | None = None
 
 
 class StateStore:

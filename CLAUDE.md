@@ -83,6 +83,7 @@ Read these on demand. Each file is focused and under ~250 lines.
 - `.agent_docs/mcp.md`: MCP clients for Context7 (library docs) and DuckDuckGo (web search), JSON-RPC transport, Tool adapters, factory wiring.
 - `.agent_docs/comprehension.md`: comprehension phase (FR-005), source collection, LLM prompt, persisted `comprehension.json`.
 - `.agent_docs/planning.md`: planning phase (FR-006), three-section LLM response, persisted `plan.md`/`todo.md`/`infra_needs.md`, infra validation against `docker-compose.yml`.
+- `.agent_docs/e2e-writing.md`: E2E writing phase (FR-007), `## FILE:` blocks parsing, `tests/test_*.py` validation, git commit + SHA recorded on state.
 
 ## Where to write what
 

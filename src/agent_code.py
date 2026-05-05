@@ -13,6 +13,7 @@ import typer
 
 from config import Settings
 from config_loader import AgentCodeConfig, ConfigError, find_config_path, load_config
+from llm.factory import PhaseLlmFactory
 from logging_config import setup_logging
 from mcp.factory import McpClientFactory
 from orchestrator import EXIT_OK, EXIT_SYSTEM_ERROR, Orchestrator
@@ -29,6 +30,8 @@ from phases import (
 from preflight import format_report, run_preflight
 from tools.registry import ToolRegistry
 from tracing import configure_tracing
+
+COMPREHENSION_PHASE_NAME = "comprehension"
 
 TEMPLATE_VERSION_FILENAME = ".template_version"
 DEFAULT_TEMPLATE_VERSION = "unknown"
@@ -125,44 +128,57 @@ class PipelineComponents:
 
     `phases` is always populated. `tools` is a `ToolRegistry` carrying the
     MCP tools when the config is loaded successfully (None otherwise).
-    `mcp_factory` is the lifecycle owner of the MCP HTTP connections; the
-    caller is responsible for `aclose()` after the run.
+    `mcp_factory` and `llm_factory` are the lifecycle owners of the
+    underlying HTTP connections; the caller is responsible for closing
+    both after the run.
     """
 
     phases: tuple[Phase, ...]
     tools: ToolRegistry | None
     mcp_factory: McpClientFactory | None
+    llm_factory: PhaseLlmFactory | None
 
 
 def _build_pipeline_components(explicit_config: Path | None) -> PipelineComponents:
-    """Construct the pipeline phases and tool registry from `config.yaml`.
+    """Construct the pipeline phases, tool registry, and LLM factory from `config.yaml`.
 
     When config is loaded successfully:
     - `template_path` is passed to `ClassificationPhase` (FR-014 bootstrap).
-    - The `mcp` section produces an `McpClientFactory`, which builds the
-      Context7 / DuckDuckGo tools and registers them in a `ToolRegistry`.
+    - The `mcp` section produces an `McpClientFactory`; its three Tool
+      adapters are registered in a `ToolRegistry`.
+    - A `PhaseLlmFactory` is built; the comprehension phase receives its
+      configured `LlmClient` (FR-005). Other LLM-using phases will be
+      wired the same way as they are implemented.
 
-    When config is missing or invalid: every phase is at its default and
-    the registry is None. The agent still runs but EMPTY workspaces halt
-    and MCP-dependent phases will not have docs/search tools.
+    When config is missing or invalid: every phase is at its default,
+    the registry is None, and the comprehension phase falls back to
+    its skeleton (log + continue) without making an LLM call.
     """
     loaded = _load_config_safely(explicit_config)
     template_path = loaded.template_path if loaded is not None else None
-    factory: McpClientFactory | None = None
+    mcp_factory: McpClientFactory | None = None
+    llm_factory: PhaseLlmFactory | None = None
     registry: ToolRegistry | None = None
     if loaded is not None:
-        factory = McpClientFactory.from_config(loaded.mcp)
-        registry = ToolRegistry(factory.build_tools())
+        mcp_factory = McpClientFactory.from_config(loaded.mcp)
+        registry = ToolRegistry(mcp_factory.build_tools())
+        llm_factory = PhaseLlmFactory(loaded)
+    comprehension_llm = llm_factory.for_phase(COMPREHENSION_PHASE_NAME) if llm_factory else None
     phases: tuple[Phase, ...] = (
         ClassificationPhase(template_path=template_path),
         DorPhase(),
-        ComprehensionPhase(),
+        ComprehensionPhase(llm_client=comprehension_llm),
         PlanningPhase(),
         E2eWritingPhase(),
         ImplementationPhase(),
         ReviewPhase(),
     )
-    return PipelineComponents(phases=phases, tools=registry, mcp_factory=factory)
+    return PipelineComponents(
+        phases=phases,
+        tools=registry,
+        mcp_factory=mcp_factory,
+        llm_factory=llm_factory,
+    )
 
 
 def _load_config_safely(explicit_config: Path | None) -> AgentCodeConfig | None:
@@ -197,7 +213,7 @@ async def _run_pipeline(
     ticket_id: str,
     ticket_path: str,
 ) -> int:
-    """Run the orchestrator, ensuring the MCP factory is closed afterward."""
+    """Run the orchestrator, ensuring MCP and LLM connections are closed afterward."""
     orchestrator = Orchestrator(
         workspace=workspace,
         template_version=template_version,
@@ -209,6 +225,8 @@ async def _run_pipeline(
     finally:
         if components.mcp_factory is not None:
             await components.mcp_factory.aclose()
+        if components.llm_factory is not None:
+            await components.llm_factory.aclose()
 
 
 def _read_template_version(workspace: Path) -> str:

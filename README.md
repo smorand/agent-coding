@@ -4,7 +4,7 @@ Autonomous coding agent that takes a structured user story as input and produces
 
 ## Status
 
-**Bootstrap phase.** Project skeleton is in place; orchestrator and phase implementations are next. See `specs/` for the MVP specification, `vars/` for the canonical templates the agent consumes.
+**MVP feature-complete.** All eight pipeline phases (classification, DoR, comprehension, planning, E2E writing, implementation loop, review, PR creation) have real logic. Multi-approach exploration (FR-009) and rolling-summary context compression (FR-010) are deferred follow-ups; the single-approach implementation loop is sufficient for the happy-path E2E coverage. See `specs/` for the MVP specification, `vars/` for the canonical templates the agent consumes.
 
 ## Tech stack
 
@@ -35,7 +35,7 @@ make run ARGS='run path/to/ticket.md --config cfg.yaml'   # main pipeline
 
 - `check-env` audits the host (Python 3.13+, `make`, `git`, `gh` authenticated, `uv`, `rg`, `ast-grep`). Exits 0 if all good, 3 on any blocking failure with actionable hints. See `.agent_docs/preflight.md`.
 - `config-show` loads `config.yaml` (via `--config`, `AGENT_CODE_CONFIG`, or `~/.config/agent-code/config.yaml`), validates strictly, and echoes the parsed config. See `.agent_docs/configuration.md`.
-- `run` drives the seven-phase pipeline against a ticket. The `--config` flag (or the standard config lookup order) supplies `template_path` so the classification phase can bootstrap an empty workspace from `vars/project-template/` (FR-014). Exit codes: 0 (completed), 1 (DoR failed), 2 (implementation exhausted), 3 (system error). Three phases have real logic today (classification with bootstrap, DoR validation); the others are still logging stubs. See `.agent_docs/orchestrator.md`, `.agent_docs/dor.md`, `.agent_docs/classification.md`, `.agent_docs/bootstrap.md`.
+- `run` drives the eight-phase pipeline against a ticket. The `--config` flag (or the standard config lookup order) supplies `template_path` so the classification phase can bootstrap an empty workspace from `vars/project-template/` (FR-014). Exit codes: 0 (completed), 1 (DoR failed or planning infra unsatisfiable), 2 (implementation exhausted, E2E tampering), 3 (system error). When run without a config, every LLM-using phase falls back to a no-op skeleton so smoke tests can exercise the pipeline shape. See `.agent_docs/orchestrator.md`, `.agent_docs/dor.md`, `.agent_docs/classification.md`, `.agent_docs/bootstrap.md`, `.agent_docs/comprehension.md`, `.agent_docs/planning.md`, `.agent_docs/e2e-writing.md`, `.agent_docs/implementation.md`, `.agent_docs/review.md`, `.agent_docs/pr-creation.md`.
 
 ## Quality gate
 

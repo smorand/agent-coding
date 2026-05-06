@@ -19,6 +19,9 @@ ENTRY_POINT := $(if $(ENTRY_POINT),$(ENTRY_POINT),app)
 # Python version check
 PYTHON_VERSION=$(shell python3 --version 2>/dev/null | cut -d' ' -f2)
 
+# Application version: derived from the latest git tag, falling back to `dev`.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+
 # Detect if uv is available
 HAS_UV=$(shell command -v uv >/dev/null 2>&1 && echo "yes" || echo "no")
 
@@ -143,8 +146,10 @@ check: lint format-check typecheck security test-cov
 # BUILD & INSTALL
 # ============================================================================
 
-## build: Build wheel and sdist packages
+## build: Build wheel and sdist packages, pinning the version into src/version.py
 build: sync
+	@echo "Pinning version $(VERSION) into src/version.py..."
+	@printf 'from __future__ import annotations\n__version__: str = "%s"\n__all__ = ["__version__"]\n' "$(VERSION)" > src/version.py
 	@echo "Building package..."
 	@uv build
 	@echo "Build complete! Artifacts in dist/"
@@ -188,10 +193,10 @@ clean-all: clean
 # DOCKER
 # ============================================================================
 
-## docker-build: Build Docker image
+## docker-build: Build Docker image (passes APP_VERSION as build arg)
 docker-build:
-	@echo "Building Docker image: $(MAKE_DOCKER_PREFIX)$(PROJECT_NAME):$(DOCKER_TAG)..."
-	@docker build -t $(MAKE_DOCKER_PREFIX)$(PROJECT_NAME):$(DOCKER_TAG) .
+	@echo "Building Docker image: $(MAKE_DOCKER_PREFIX)$(PROJECT_NAME):$(DOCKER_TAG) (APP_VERSION=$(VERSION))..."
+	@docker build --build-arg APP_VERSION=$(VERSION) -t $(MAKE_DOCKER_PREFIX)$(PROJECT_NAME):$(DOCKER_TAG) .
 	@echo "Docker image built!"
 
 ## docker-push: Push Docker image to registry

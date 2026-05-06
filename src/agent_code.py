@@ -31,6 +31,7 @@ from phases import (
 from preflight import format_report, run_preflight
 from tools.registry import ToolRegistry
 from tracing import configure_tracing
+from version import __version__
 
 COMPREHENSION_PHASE_NAME = "comprehension"
 PLANNING_PHASE_NAME = "planning"
@@ -110,6 +111,13 @@ def check_env() -> None:
     report = run_preflight()
     typer.echo(format_report(report))
     raise typer.Exit(code=EXIT_OK if report.is_ok else EXIT_SYSTEM_ERROR)
+
+
+@app.command()
+def version() -> None:
+    """Print the agent-code version and exit."""
+    typer.echo(f"agent-code {__version__}")
+    raise typer.Exit(code=EXIT_OK)
 
 
 @app.command(name="config-show")

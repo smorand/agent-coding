@@ -82,6 +82,13 @@ def test_check_env_runs_and_returns_an_exit_code() -> None:
     assert "python" in result.stdout
 
 
+def test_version_command_prints_app_version() -> None:
+    """`version` prints `agent-code <version>` and exits 0."""
+    result = runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+    assert result.stdout.startswith("agent-code ")
+
+
 def test_config_show_with_missing_file_exits_with_system_error(tmp_path: Path) -> None:
     """`config-show --config <missing>` exits 3 with a clear error."""
     result = runner.invoke(app, ["config-show", "--config", str(tmp_path / "absent.yaml")])

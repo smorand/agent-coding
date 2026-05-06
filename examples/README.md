@@ -27,7 +27,7 @@ Hosted endpoints via OpenRouter. Demo tiering:
 
 | Phase | Model | Slug | $/1M (in/out) | Why |
 |---|---|---|---|---|
-| `classification`, `dor` | Qwen 3 8B | `qwen/qwen3-8b` | 0.05 / 0.40 | deterministic, regex-friendly |
+| `classification`, `dor` | Qwen 3.5 9B | `qwen/qwen3.5-9b` | 0.10 / 0.15 | deterministic, regex-friendly; 262k context, output-cheap so an output-heavy workload runs significantly cheaper than `qwen/qwen3-8b` despite the higher input rate |
 | `comprehension` | Qwen 3.6 Flash | `qwen/qwen3.6-flash` | 0.25 / 1.50 | one round-trip, large 1M context |
 | `planning`, `e2e_writing`, `implementation`, `review` | Qwen 3.6 27B | `qwen/qwen3.6-27b` | 0.32 / 3.20 | the decision-makers (cap for the demo) |
 | `summarizer` | Qwen 3.6 Flash | `qwen/qwen3.6-flash` | 0.25 / 1.50 | fast compression of older iterations |

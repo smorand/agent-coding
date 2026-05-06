@@ -1,12 +1,18 @@
 """Pipeline orchestrator.
 
-Executes the seven phases in order, persists the run state to
-.agent_work/<ticket_id>/state.json after every phase transition, and supports
-resuming from a checkpoint when the same ticket is re-invoked.
+Executes the eight phases in order, persists the run state to
+`.agent_work/<ticket_id>/state.json` after every phase transition, supports
+resuming from a checkpoint when the same ticket is re-invoked, and (FR-011
+business rule) re-runs the implementation phase ONCE when the reviewer
+returns REQUEST_CHANGES with blocking concerns. After every phase
+completion the orchestrator commits `.agent_work/<ticket_id>/state.json`
+with the canonical message `agent-code: phase <name>` (FR-017 audit
+trail), giving the branch one commit per phase boundary.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -15,11 +21,13 @@ from phases import PIPELINE
 from phases.base import OutcomeKind, Phase, PhaseContext, PhaseOutcome
 from state import PhaseName, PhaseRecord, PhaseStatus, RunStatus, State, StateStore
 from tools.anti_cheat import AntiCheatGuard
+from tools.runner import AsyncSubprocessRunner
 from tracing import trace_span
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tools.base import SubprocessRunner
     from tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -30,6 +38,10 @@ EXIT_OK = 0
 EXIT_DOR_FAILED = 1
 EXIT_EXHAUSTED = 2
 EXIT_SYSTEM_ERROR = 3
+
+REVIEW_REPORT_FILENAME = "review.json"
+MAX_REVIEW_RERUNS = 1  # FR-011: at most one re-run of implementation+review
+AUDIT_COMMIT_TEMPLATE = "agent-code: phase {phase}"
 
 
 class Orchestrator:
@@ -46,7 +58,14 @@ class Orchestrator:
     completes (success, halt, or exception).
     """
 
-    __slots__ = ("_guard", "_phases", "_template_version", "_workspace")
+    __slots__ = (
+        "_audit_runner",
+        "_audit_trail",
+        "_guard",
+        "_phases",
+        "_template_version",
+        "_workspace",
+    )
 
     def __init__(
         self,
@@ -55,6 +74,8 @@ class Orchestrator:
         phases: tuple[Phase, ...] = PIPELINE,
         *,
         tools: ToolRegistry | AntiCheatGuard | None = None,
+        audit_runner: SubprocessRunner | None = None,
+        audit_trail: bool = True,
     ) -> None:
         self._workspace = workspace
         self._template_version = template_version
@@ -62,6 +83,8 @@ class Orchestrator:
         self._guard: AntiCheatGuard | None = None
         if tools is not None:
             self._guard = tools if isinstance(tools, AntiCheatGuard) else AntiCheatGuard(tools)
+        self._audit_runner = audit_runner
+        self._audit_trail = audit_trail
 
     @property
     def phases(self) -> tuple[Phase, ...]:
@@ -115,22 +138,92 @@ class Orchestrator:
         work_dir: Path,
         ticket_path: str,
     ) -> int:
-        for phase in self._phases:
-            record = self._record_for(state, phase.name)
-            if record.status == PhaseStatus.COMPLETED:
-                logger.debug("Skipping completed phase %s", phase.name.value)
-                continue
-            outcome = await self._run_one(phase, state, store, work_dir, ticket_path, record)
-            exit_code = self._exit_code_from(outcome)
-            if exit_code is not None:
-                state.run_status = self._run_status_from(outcome)
-                state.exit_code = exit_code
+        # The phase walk is wrapped in a small loop: when the reviewer returns
+        # REQUEST_CHANGES with iteration < MAX_REVIEW_ITERATIONS we reset the
+        # implementation + review records to PENDING and walk the remaining
+        # tail again (FR-011 re-run business rule).
+        while True:
+            for phase in self._phases:
+                record = self._record_for(state, phase.name)
+                if record.status == PhaseStatus.COMPLETED:
+                    logger.debug("Skipping completed phase %s", phase.name.value)
+                    continue
+                outcome = await self._run_one(phase, state, store, work_dir, ticket_path, record)
+                await self._maybe_audit_commit(work_dir, phase.name)
+                exit_code = self._exit_code_from(outcome)
+                if exit_code is not None:
+                    state.run_status = self._run_status_from(outcome)
+                    state.exit_code = exit_code
+                    await store.save(state)
+                    return exit_code
+                if phase.name == PhaseName.REVIEW and self._should_rerun_after_review(state):
+                    logger.info(
+                        "review iteration %d returned REQUEST_CHANGES; resetting implementation+review for one re-run",
+                        state.review_iteration,
+                    )
+                    self._prepare_review_rerun(state, work_dir)
+                    await store.save(state)
+                    break  # re-enter the while loop
+            else:
+                # The for loop exhausted without break -> all phases COMPLETED.
+                state.run_status = RunStatus.COMPLETED
+                state.exit_code = EXIT_OK
                 await store.save(state)
-                return exit_code
-        state.run_status = RunStatus.COMPLETED
-        state.exit_code = EXIT_OK
-        await store.save(state)
-        return EXIT_OK
+                return EXIT_OK
+
+    def _should_rerun_after_review(self, state: State) -> bool:
+        if state.review_verdict != "REQUEST_CHANGES":
+            return False
+        return state.review_iteration < MAX_REVIEW_RERUNS
+
+    def _prepare_review_rerun(self, state: State, work_dir: Path) -> None:
+        """Reset implementation+review records and stash the blocking concerns."""
+        state.review_iteration += 1
+        state.review_concerns = self._read_blocking_concerns(work_dir)
+        for record in state.phases:
+            if record.name in {PhaseName.IMPLEMENTATION, PhaseName.REVIEW}:
+                record.status = PhaseStatus.PENDING
+                record.started_at = None
+                record.completed_at = None
+                record.error = None
+
+    @staticmethod
+    def _read_blocking_concerns(work_dir: Path) -> str:
+        path = work_dir / REVIEW_REPORT_FILENAME
+        if not path.exists():
+            return ""
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return ""
+        blocking = payload.get("blocking") or []
+        if not blocking:
+            return ""
+        lines = [f"- {b.get('path', '?')}:{b.get('line', '?')} - {b.get('reason', '')}" for b in blocking]
+        return "\n".join(lines)
+
+    async def _maybe_audit_commit(self, work_dir: Path, phase: PhaseName) -> None:
+        """Commit `.agent_work/<id>/state.json` after the phase if audit trail is on."""
+        if not self._audit_trail:
+            return
+        runner: SubprocessRunner = self._audit_runner or AsyncSubprocessRunner()
+        relative_state = work_dir.relative_to(self._workspace) / "state.json"
+        # Stage just the state file. If the workspace isn't a git repo, this
+        # silently fails and the orchestrator carries on.
+        add = await runner.run(
+            ["git", "add", str(relative_state)],
+            cwd=self._workspace,
+        )
+        if add.returncode != 0:
+            logger.debug("audit-trail: git add skipped (%s)", add.stderr.strip())
+            return
+        message = AUDIT_COMMIT_TEMPLATE.format(phase=phase.value)
+        commit = await runner.run(
+            ["git", "commit", "--allow-empty", "-m", message],
+            cwd=self._workspace,
+        )
+        if commit.returncode != 0:
+            logger.debug("audit-trail: git commit skipped (%s)", commit.stderr.strip())
 
     async def _run_one(
         self,

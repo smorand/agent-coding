@@ -27,6 +27,7 @@ from tools.anti_cheat import (
     BlockedCall,
     is_test_locked_path,
 )
+from tools.apply_patch import ApplyPatchTool
 from tools.base import (
     DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
     SubprocessOutcome,
@@ -61,6 +62,7 @@ from tools.git_ops import (
     GitResetTool,
     GitStatusTool,
 )
+from tools.lsp import LspDefinitionTool, LspHoverTool, LspReferencesTool
 from tools.make_runner import MakeTool
 from tools.registry import ToolRegistry
 from tools.runner import AsyncSubprocessRunner
@@ -71,6 +73,7 @@ __all__ = [
     "DEFAULT_SUBPROCESS_TIMEOUT_SECONDS",
     "WRITE_TOOL_NAMES",
     "AntiCheatGuard",
+    "ApplyPatchTool",
     "AstGrepTool",
     "AsyncSubprocessRunner",
     "AuditTrail",
@@ -94,6 +97,9 @@ __all__ = [
     "GitStatusTool",
     "GrepTool",
     "ListDirTool",
+    "LspDefinitionTool",
+    "LspHoverTool",
+    "LspReferencesTool",
     "MakeTool",
     "MoveFileTool",
     "ReadFileTool",

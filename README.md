@@ -75,7 +75,7 @@ agent-coding/                        # The repo (= the agent-code project)
 │   └── tools/                       Tool registry (file, search, git, make)
 ├── tests/                           Pytest suite
 ├── specs/                           Specification documents
-│   └── 2026-05-03_21:03:22-agent-code-mvp.md
+│   └── 2026-05-03_21-03-22-agent-code-mvp.md
 └── vars/                            Canonical templates shipped with agent-code
     ├── project-template/            Python project skeleton (consumed by FR-014)
     └── ticket-template/             User story templates (consumed by FR-004)
@@ -96,7 +96,7 @@ ticket -> classify -> DoR check -> comprehend -> plan -> write E2E (locked) ->
 implement loop (multi-approach) -> review (fresh context) -> open PR
 ```
 
-See `specs/2026-05-03_21:03:22-agent-code-mvp.md` for the complete specification (17 functional requirements, 28 E2E tests, 6 scenarios).
+See `specs/2026-05-03_21-03-22-agent-code-mvp.md` for the complete specification (17 functional requirements, 28 E2E tests, 6 scenarios).
 
 ## Documentation
 

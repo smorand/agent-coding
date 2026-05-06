@@ -5,7 +5,7 @@
 #   make run ARGS='run path/to/ticket.md --config examples/config.openrouter.yaml'
 #
 # Pricing snapshot (2026-05, $/1M tokens prompt-completion, OpenRouter):
-#   qwen/qwen3-8b             0.05 / 0.40   (40k ctx)   - cheap, deterministic phases
+#   qwen/qwen3.5-9b           0.10 / 0.15   (262k ctx)  - cheap, deterministic phases
 #   qwen/qwen3.6-flash        0.25 / 1.50   (1M ctx)    - large context, fast
 #   qwen/qwen3.6-27b          0.32 / 3.20   (262k ctx)  - heavy reasoning phases
 #
@@ -17,12 +17,12 @@ phases:
   # Deterministic, regex-friendly phases: a small model is enough.
   classification:
     url: https://openrouter.ai/api/v1
-    model_name: qwen/qwen3-8b
+    model_name: qwen/qwen3.5-9b
     api_key_env: OPENROUTER_API_KEY
     temperature: 0.0
   dor:
     url: https://openrouter.ai/api/v1
-    model_name: qwen/qwen3-8b
+    model_name: qwen/qwen3.5-9b
     api_key_env: OPENROUTER_API_KEY
     temperature: 0.0
 

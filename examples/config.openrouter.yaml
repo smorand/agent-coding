@@ -1,0 +1,101 @@
+# =============================================================================
+# OpenRouter configuration - demo tiering
+# =============================================================================
+# Set OPENROUTER_API_KEY in your environment, then:
+#   make run ARGS='run path/to/ticket.md --config examples/config.openrouter.yaml'
+#
+# Pricing snapshot (2026-05, $/1M tokens prompt-completion, OpenRouter):
+#   qwen/qwen3-8b             0.05 / 0.40   (40k ctx)   - cheap, deterministic phases
+#   qwen/qwen3.6-flash        0.25 / 1.50   (1M ctx)    - large context, fast
+#   qwen/qwen3.6-27b          0.32 / 3.20   (262k ctx)  - heavy reasoning phases
+#
+# Substitute any phase model with the family slug you prefer; the agent only
+# needs an OpenAI-compatible endpoint and a model name.
+# =============================================================================
+
+phases:
+  # Deterministic, regex-friendly phases: a small model is enough.
+  classification:
+    url: https://openrouter.ai/api/v1
+    model_name: qwen/qwen3-8b
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0.0
+  dor:
+    url: https://openrouter.ai/api/v1
+    model_name: qwen/qwen3-8b
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0.0
+
+  # Comprehension reads the project's CLAUDE.md plus N agent_docs files; the
+  # 1M-token Flash context comfortably fits everything in one round-trip.
+  comprehension:
+    url: https://openrouter.ai/api/v1
+    model_name: qwen/qwen3.6-flash
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0.2
+    max_tokens: 4000
+
+  # Phases that drive real decisions: planning, test writing, implementation,
+  # review. The 27B model is the cap for the demo (per project request).
+  planning:
+    url: https://openrouter.ai/api/v1
+    model_name: qwen/qwen3.6-27b
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0.2
+    max_tokens: 4000
+  e2e_writing:
+    url: https://openrouter.ai/api/v1
+    model_name: qwen/qwen3.6-27b
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0.1
+    max_tokens: 6000
+  implementation:
+    url: https://openrouter.ai/api/v1
+    model_name: qwen/qwen3.6-27b
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0.2
+    max_tokens: 8000
+  review:
+    url: https://openrouter.ai/api/v1
+    model_name: qwen/qwen3.6-27b
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0.1
+    max_tokens: 3000
+
+  # Compression of older iterations - cheap and fast, FR-010.
+  summarizer:
+    url: https://openrouter.ai/api/v1
+    model_name: qwen/qwen3.6-flash
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0.2
+    max_tokens: 1500
+
+# Path to the canonical Python project skeleton (FR-014). Adjust to where you
+# checked out the repo.
+template_path: ./vars/project-template
+
+# Implementation loop knobs (defaults match the spec).
+loop:
+  max_iterations_per_approach: 30
+  stagnation_threshold: 5
+  min_approaches: 3
+  wall_clock_seconds: 7200
+
+secrets_denylist:
+  - "*_KEY"
+  - "*_TOKEN"
+  - "*_SECRET"
+  - "*_PASSWORD"
+
+# MCP servers - point at running instances or leave at the placeholders if you
+# don't need Context7 / DuckDuckGo (the comprehension phase works without them
+# in the MVP).
+mcp:
+  context7:
+    url: http://localhost:9000
+  duckduckgo:
+    url: http://localhost:9001
+
+otel:
+  exporter: jsonl
+  path: .agent_work/{ticket_id}/traces.jsonl

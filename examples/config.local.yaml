@@ -1,0 +1,98 @@
+# =============================================================================
+# Local configuration - single OpenAI-compatible endpoint
+# =============================================================================
+# Use when you serve a Qwen model locally with vLLM, TGI, llama.cpp server, or
+# any OpenAI-compatible runtime. The default below assumes one vLLM instance
+# at http://localhost:8000/v1 serving a single Qwen3.6 27B (or comparable)
+# model under the name `qwen3.6-27b`.
+#
+# To start a representative vLLM server (one of many setups):
+#   vllm serve Qwen/Qwen3.6-27B-Instruct \
+#       --served-model-name qwen3.6-27b \
+#       --port 8000
+#
+# Then:
+#   make run ARGS='run path/to/ticket.md --config examples/config.local.yaml'
+#
+# If you have a second smaller model (e.g. an 8B for the deterministic phases)
+# served on another port, copy the relevant phase blocks below and switch
+# their `url` and `model_name`. The schema lets each phase target a different
+# endpoint independently.
+# =============================================================================
+
+phases:
+  # Deterministic phases - if you serve a smaller model on :8001, point them
+  # there to save tokens; otherwise the default 27B handles them at low temp.
+  classification:
+    url: http://localhost:8000/v1
+    model_name: qwen3.6-27b
+    temperature: 0.0
+  dor:
+    url: http://localhost:8000/v1
+    model_name: qwen3.6-27b
+    temperature: 0.0
+
+  comprehension:
+    url: http://localhost:8000/v1
+    model_name: qwen3.6-27b
+    temperature: 0.2
+    max_tokens: 4000
+
+  planning:
+    url: http://localhost:8000/v1
+    model_name: qwen3.6-27b
+    temperature: 0.2
+    max_tokens: 4000
+  e2e_writing:
+    url: http://localhost:8000/v1
+    model_name: qwen3.6-27b
+    temperature: 0.1
+    max_tokens: 6000
+  implementation:
+    url: http://localhost:8000/v1
+    model_name: qwen3.6-27b
+    temperature: 0.2
+    max_tokens: 8000
+  review:
+    url: http://localhost:8000/v1
+    model_name: qwen3.6-27b
+    temperature: 0.1
+    max_tokens: 3000
+
+  # Summarizer can run on the same model; if you need to save throughput
+  # consider serving Qwen3.6 Flash (or a smaller Qwen) on a sibling port and
+  # pointing this phase there.
+  summarizer:
+    url: http://localhost:8000/v1
+    model_name: qwen3.6-27b
+    temperature: 0.2
+    max_tokens: 1500
+
+# Path to the canonical Python project skeleton (FR-014). Adjust to where you
+# checked out the repo.
+template_path: ./vars/project-template
+
+# Implementation loop knobs (defaults match the spec).
+loop:
+  max_iterations_per_approach: 30
+  stagnation_threshold: 5
+  min_approaches: 3
+  wall_clock_seconds: 7200
+
+secrets_denylist:
+  - "*_KEY"
+  - "*_TOKEN"
+  - "*_SECRET"
+  - "*_PASSWORD"
+
+# Local MCP placeholders. Run Context7 + DuckDuckGo MCP servers if you want
+# library-doc lookups; the comprehension MVP works without them today.
+mcp:
+  context7:
+    url: http://localhost:9000
+  duckduckgo:
+    url: http://localhost:9001
+
+otel:
+  exporter: jsonl
+  path: .agent_work/{ticket_id}/traces.jsonl

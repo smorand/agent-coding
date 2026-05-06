@@ -56,6 +56,7 @@ DEFAULT_BLOCKED_DECOMPOSITION = (
 DEFAULT_NOTABLE_DECISIONS = "_See `plan.md` for the rationale and notable choices._"
 DEFAULT_OUT_OF_SCOPE = "_None recorded; nothing was deliberately deferred._"
 DEFAULT_FALLBACK_APPROACH = "_See `plan.md`._"
+IMPLEMENTATION_REPORT_FILENAME = "implementation.json"
 
 _AC_PATTERN = re.compile(r"^\s*-\s*(AC-\d+)\s*:\s*(.+?)\s*$", re.MULTILINE)
 _TEST_DEF_PATTERN = re.compile(r"^\s*(?:async\s+)?def\s+(test_[A-Za-z0-9_]+)\s*\(", re.MULTILINE)
@@ -221,12 +222,14 @@ def _build_template_inputs(
     attempted: tuple[AttemptedApproach, ...] = ()
     decomposition = ""
     if is_blocked:
-        attempted = (
-            AttemptedApproach(
-                name="primary",
-                why_failed="reviewer requested changes or implementation loop did not converge",
-            ),
-        )
+        attempted = _read_attempted_approaches(work_dir)
+        if not attempted:
+            attempted = (
+                AttemptedApproach(
+                    name="primary",
+                    why_failed=("reviewer requested changes or implementation loop did not converge"),
+                ),
+            )
         decomposition = DEFAULT_BLOCKED_DECOMPOSITION
     return PrTemplateInputs(
         ticket_reference=str(ticket_path),
@@ -238,6 +241,25 @@ def _build_template_inputs(
         out_of_scope=DEFAULT_OUT_OF_SCOPE,
         attempted_approaches=attempted,
         proposed_decomposition=decomposition,
+    )
+
+
+def _read_attempted_approaches(work_dir: Path) -> tuple[AttemptedApproach, ...]:
+    """Read implementation.json and surface every approach the impl loop tried."""
+    path = work_dir / IMPLEMENTATION_REPORT_FILENAME
+    if not path.exists():
+        return ()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ()
+    approaches = payload.get("approaches") or []
+    return tuple(
+        AttemptedApproach(
+            name=f"approach-{a.get('number', i + 1)}",
+            why_failed=str(a.get("stop_message", a.get("stop_reason", "no detail"))),
+        )
+        for i, a in enumerate(approaches)
     )
 
 

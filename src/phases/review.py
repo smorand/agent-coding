@@ -162,6 +162,16 @@ class ReviewPhase(Phase):
                 kind=OutcomeKind.HALT_ERROR,
                 message=f"review response malformed: {exc}",
             )
+        # Doc-maintenance gate (FR-016): if the diff touches src/ but neither
+        # CLAUDE.md, README.md, nor any .agent_docs/ file, append an
+        # auto-blocking concern. This is the deterministic complement to
+        # the reviewer's prompt-side check.
+        diff_text, _ = await self._collect_git_inputs(workspace, ctx.state.e2e_commit_sha)
+        doc_concern = _detect_missing_doc_update(diff_text)
+        if doc_concern is not None:
+            blocking = (*blocking, doc_concern)
+            verdict = ReviewVerdict.REQUEST_CHANGES
+            logger.info("review: doc-maintenance gate auto-flagged %s", doc_concern.path)
         report = ReviewReport(
             verdict=verdict,
             blocking=blocking,
@@ -174,6 +184,9 @@ class ReviewPhase(Phase):
         )
         await asyncio.to_thread(self._persist_report, ctx.work_dir, report)
         ctx.state.review_verdict = verdict.value
+        if verdict == ReviewVerdict.APPROVE:
+            # Clear blocking concerns from a previous re-run; they are stale now.
+            ctx.state.review_concerns = None
         logger.info(
             "review verdict: %s (blocking=%d, suggestions=%d)",
             verdict.value,
@@ -256,6 +269,35 @@ def _truncate_diff(text: str) -> str:
 
 _BULLET_PATTERN = re.compile(r"^[-*]\s+(.+)$", re.MULTILINE)
 _CONCERN_PATTERN = re.compile(r"^(?P<path>[^\s:]+):(?P<line>\d+|\?)\s*[-—]\s*(?P<reason>.+)$")
+_DIFF_PATH_PATTERN = re.compile(r"^\+\+\+ b/(?P<path>\S+)", re.MULTILINE)
+
+
+def _detect_missing_doc_update(diff_text: str) -> ReviewConcern | None:
+    """Return a doc-maintenance concern when src/ changed without docs (FR-016).
+
+    Heuristic: if any `+++ b/<path>` header in the diff lives under `src/`
+    (i.e. production code changed) but neither CLAUDE.md, README.md, nor
+    any path under `.agent_docs/` was touched, return a synthetic blocking
+    concern. Pure: easy to test, low false-positive risk for the common
+    case (most src/ changes warrant at least a CLAUDE.md mention).
+    """
+    paths = _DIFF_PATH_PATTERN.findall(diff_text)
+    if not paths:
+        return None
+    touched_src = any(p.startswith("src/") for p in paths)
+    touched_docs = any(p in {"CLAUDE.md", "README.md"} or p.startswith(".agent_docs/") for p in paths)
+    if touched_src and not touched_docs:
+        return ReviewConcern(
+            path="CLAUDE.md",
+            line="?",
+            severity="blocking",
+            reason=(
+                "diff touches src/ but neither CLAUDE.md, README.md, nor .agent_docs/ "
+                "were updated; FR-016 requires doc maintenance for new modules / "
+                "user-visible behavior changes"
+            ),
+        )
+    return None
 
 
 def parse_review_response(

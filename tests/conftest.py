@@ -36,7 +36,10 @@ _STUB_E2E_RESPONSE = "## FILE: tests/test_stub.py\n```python\n# AC-1\ndef test_s
 _STUB_REVIEW_RESPONSE = (
     "## VERDICT\n\nAPPROVE\n\n## BLOCKING\n\nNone.\n\n## SUGGESTIONS\n\nNone.\n\n## SUMMARY\n\nstub review ok.\n"
 )
-_STUB_IMPLEMENTATION_RESPONSE = "## FILE: src/stub_impl.py\n```python\nx = 1\n```\n"
+_STUB_IMPLEMENTATION_RESPONSE = (
+    "## FILE: src/stub_impl.py\n```python\nx = 1\n```\n\n"
+    "## FILE: CLAUDE.md\n```\n# stub-impl module added by the test fixture\n```\n"
+)
 
 
 @pytest.fixture

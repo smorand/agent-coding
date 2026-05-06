@@ -37,6 +37,7 @@ PLANNING_PHASE_NAME = "planning"
 E2E_WRITING_PHASE_NAME = "e2e_writing"
 IMPLEMENTATION_PHASE_NAME = "implementation"
 REVIEW_PHASE_NAME = "review"
+SUMMARIZER_PHASE_NAME = "summarizer"
 
 TEMPLATE_VERSION_FILENAME = ".template_version"
 DEFAULT_TEMPLATE_VERSION = "unknown"
@@ -172,6 +173,7 @@ def _build_pipeline_components(explicit_config: Path | None) -> PipelineComponen
     planning_llm = llm_factory.for_phase(PLANNING_PHASE_NAME) if llm_factory else None
     e2e_writing_llm = llm_factory.for_phase(E2E_WRITING_PHASE_NAME) if llm_factory else None
     implementation_llm = llm_factory.for_phase(IMPLEMENTATION_PHASE_NAME) if llm_factory else None
+    summarizer_llm = llm_factory.for_phase(SUMMARIZER_PHASE_NAME) if llm_factory else None
     review_llm = llm_factory.for_phase(REVIEW_PHASE_NAME) if llm_factory else None
     phases: tuple[Phase, ...] = (
         ClassificationPhase(template_path=template_path),
@@ -179,7 +181,10 @@ def _build_pipeline_components(explicit_config: Path | None) -> PipelineComponen
         ComprehensionPhase(llm_client=comprehension_llm),
         PlanningPhase(llm_client=planning_llm),
         E2eWritingPhase(llm_client=e2e_writing_llm),
-        ImplementationPhase(llm_client=implementation_llm),
+        ImplementationPhase(
+            llm_client=implementation_llm,
+            summarizer_client=summarizer_llm,
+        ),
         ReviewPhase(llm_client=review_llm),
         PrCreationPhase(),
     )

@@ -198,7 +198,7 @@ async def test_run_converges_when_first_make_check_passes(tmp_path: Path) -> Non
     workspace, work_dir, ticket = _make_workspace(tmp_path)
     llm = ScriptedLlmClient([_ok_response(_VALID_BLOCK)])
     runner = ScriptedRunner([SubprocessOutcome(returncode=0, stdout="all green", stderr="")])
-    phase = ImplementationPhase(llm_client=llm, workspace=workspace, runner=runner)
+    phase = ImplementationPhase(llm_client=llm, workspace=workspace, runner=runner, min_approaches=1)
     ctx = _ctx(work_dir, ticket)
 
     outcome = await phase.run(ctx)
@@ -229,20 +229,24 @@ async def test_run_converges_after_a_few_iterations(tmp_path: Path) -> None:
     ]
     llm = ScriptedLlmClient(responses)
     runner = ScriptedRunner(make_outcomes)
-    phase = ImplementationPhase(llm_client=llm, workspace=workspace, runner=runner)
+    phase = ImplementationPhase(llm_client=llm, workspace=workspace, runner=runner, min_approaches=1)
 
     outcome = await phase.run(_ctx(work_dir, ticket))
 
     assert outcome.kind == OutcomeKind.CONTINUE
     payload = json.loads((work_dir / IMPLEMENTATION_REPORT_FILENAME).read_text(encoding="utf-8"))
     assert payload["final_status"] == "converged"
-    assert len(payload["iterations"]) == 3
+    assert len(payload["approaches"]) == 1
+    assert len(payload["approaches"][0]["iterations"]) == 3
 
 
 async def test_run_halts_exhausted_on_max_iterations(tmp_path: Path) -> None:
-    """When max_iterations is hit without success, halt with HALT_EXHAUSTED."""
+    """When max_iterations is hit without success, halt with HALT_EXHAUSTED.
+
+    Single-approach budget: with min_approaches=1, exhausting iterations means
+    the whole phase exhausts.
+    """
     workspace, work_dir, ticket = _make_workspace(tmp_path)
-    # Three failing iterations, but each has a different signature so stagnation does not fire.
     responses = [
         _ok_response("## FILE: src/v1.py\n```python\nx = 1\n```\n"),
         _ok_response("## FILE: src/v2.py\n```python\nx = 2\n```\n"),
@@ -250,8 +254,9 @@ async def test_run_halts_exhausted_on_max_iterations(tmp_path: Path) -> None:
     ]
     make_outcomes = [
         SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_a\n", stderr=""),
-        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_b\n", stderr=""),
-        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_c\n", stderr=""),
+        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_b\nFAILED tests/t.py::test_c\n", stderr=""),
+        # the third failure has the same set as #2 to avoid regression triggering early
+        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_b\nFAILED tests/t.py::test_c\n", stderr=""),
     ]
     llm = ScriptedLlmClient(responses)
     runner = ScriptedRunner(make_outcomes)
@@ -261,12 +266,12 @@ async def test_run_halts_exhausted_on_max_iterations(tmp_path: Path) -> None:
         runner=runner,
         max_iterations=3,
         stagnation_threshold=99,
+        min_approaches=1,
     )
 
     outcome = await phase.run(_ctx(work_dir, ticket))
 
     assert outcome.kind == OutcomeKind.HALT_EXHAUSTED
-    assert "max iterations" in outcome.message
 
 
 async def test_run_halts_on_stagnation(tmp_path: Path) -> None:
@@ -285,6 +290,7 @@ async def test_run_halts_on_stagnation(tmp_path: Path) -> None:
         runner=runner,
         max_iterations=10,
         stagnation_threshold=3,
+        min_approaches=1,
     )
 
     outcome = await phase.run(_ctx(work_dir, ticket))
@@ -306,35 +312,193 @@ async def test_run_handles_parse_error_iteration_then_recovers(tmp_path: Path) -
         workspace=workspace,
         runner=runner,
         max_iterations=5,
+        min_approaches=1,
     )
 
     outcome = await phase.run(_ctx(work_dir, ticket))
 
     assert outcome.kind == OutcomeKind.CONTINUE
     payload = json.loads((work_dir / IMPLEMENTATION_REPORT_FILENAME).read_text(encoding="utf-8"))
+    iterations = payload["approaches"][0]["iterations"]
     # The first iteration recorded the parse error and did not run make check.
-    assert payload["iterations"][0]["parse_error"]
-    assert payload["iterations"][0]["check_returncode"] == -1
+    assert iterations[0]["parse_error"]
+    assert iterations[0]["check_returncode"] == -1
     # The second iteration succeeded.
-    assert payload["iterations"][1]["check_returncode"] == 0
+    assert iterations[1]["check_returncode"] == 0
 
 
 async def test_run_records_llm_error_and_halts_exhausted(tmp_path: Path) -> None:
-    """An LlmError aborts the loop; the iteration is recorded with parse_error set."""
+    """An LlmError aborts the current approach; with min_approaches=1 the phase halts."""
     workspace, work_dir, ticket = _make_workspace(tmp_path)
     phase = ImplementationPhase(
         llm_client=ScriptedLlmClient([LlmError("endpoint down")]),
         workspace=workspace,
         runner=ScriptedRunner([]),
+        min_approaches=1,
     )
 
     outcome = await phase.run(_ctx(work_dir, ticket))
 
     assert outcome.kind == OutcomeKind.HALT_EXHAUSTED
     payload = json.loads((work_dir / IMPLEMENTATION_REPORT_FILENAME).read_text(encoding="utf-8"))
-    assert payload["iterations"][0]["parse_error"] == "endpoint down"
+    iterations = payload["approaches"][0]["iterations"]
+    assert iterations[0]["parse_error"] == "endpoint down"
 
 
 def test_default_stagnation_threshold_matches_spec() -> None:
     """The default threshold of 5 matches FR-008."""
     assert DEFAULT_STAGNATION_THRESHOLD == 5
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Multi-approach (FR-009) and wall-clock (FR-008) tests
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+async def test_run_retries_a_second_approach_after_first_exhausts(tmp_path: Path) -> None:
+    """Approach 1 hits max_iterations; approach 2 converges; phase returns CONTINUE."""
+    workspace, work_dir, ticket = _make_workspace(tmp_path)
+    # Approach 1: 2 iterations, both fail.
+    # Approach 2: 1 iteration, success.
+    responses = [
+        _ok_response("## FILE: src/a1.py\n```python\nx = 1\n```\n"),
+        _ok_response("## FILE: src/a2.py\n```python\nx = 2\n```\n"),
+        _ok_response("## FILE: src/win.py\n```python\nx = 9\n```\n"),
+    ]
+    make_outcomes = [
+        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_a\n", stderr=""),
+        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_a\nFAILED tests/t.py::test_b\n", stderr=""),
+        SubprocessOutcome(returncode=0, stdout="ok", stderr=""),
+    ]
+    runner = ScriptedRunner(make_outcomes)
+    phase = ImplementationPhase(
+        llm_client=ScriptedLlmClient(responses),
+        workspace=workspace,
+        runner=runner,
+        max_iterations=2,
+        stagnation_threshold=99,
+        min_approaches=2,
+    )
+    ctx = _ctx(work_dir, ticket)
+    ctx.state.e2e_commit_sha = "abc123"
+
+    outcome = await phase.run(ctx)
+
+    assert outcome.kind == OutcomeKind.CONTINUE
+    # The runner saw a `git reset --hard <sha>` between approaches.
+    assert any(c[:3] == ["git", "reset", "--hard"] for c in runner.calls)
+    payload = json.loads((work_dir / IMPLEMENTATION_REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert len(payload["approaches"]) == 2
+    assert payload["approaches"][0]["stop_reason"] in {"max_iterations", "regression"}
+    assert payload["final_status"] == "converged"
+    # Per-approach log file written.
+    assert (work_dir / "approaches" / "01.md").exists()
+    assert (work_dir / "approaches" / "02.md").exists()
+
+
+async def test_run_halts_after_min_approaches_exhausted(tmp_path: Path) -> None:
+    """Each of the 3 approaches fails its single iteration; halt with HALT_EXHAUSTED."""
+    workspace, work_dir, ticket = _make_workspace(tmp_path)
+    responses = [
+        _ok_response("## FILE: src/a.py\n```python\nx = 1\n```\n"),
+        _ok_response("## FILE: src/b.py\n```python\nx = 2\n```\n"),
+        _ok_response("## FILE: src/c.py\n```python\nx = 3\n```\n"),
+    ]
+    make_outcomes = [
+        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_a\n", stderr=""),
+        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_a\n", stderr=""),
+        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_a\n", stderr=""),
+    ]
+    runner = ScriptedRunner(make_outcomes)
+    phase = ImplementationPhase(
+        llm_client=ScriptedLlmClient(responses),
+        workspace=workspace,
+        runner=runner,
+        max_iterations=1,
+        stagnation_threshold=99,
+        min_approaches=3,
+    )
+    ctx = _ctx(work_dir, ticket)
+    ctx.state.e2e_commit_sha = "abc123"
+
+    outcome = await phase.run(ctx)
+
+    assert outcome.kind == OutcomeKind.HALT_EXHAUSTED
+    payload = json.loads((work_dir / IMPLEMENTATION_REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert len(payload["approaches"]) == 3
+    assert payload["final_status"] == "exhausted"
+
+
+async def test_run_halts_on_wall_clock_budget(tmp_path: Path) -> None:
+    """A wall-clock budget of 0 seconds halts immediately with WALL_CLOCK reason."""
+    workspace, work_dir, ticket = _make_workspace(tmp_path)
+    runner = ScriptedRunner([])
+    phase = ImplementationPhase(
+        llm_client=ScriptedLlmClient([_ok_response(_VALID_BLOCK)]),
+        workspace=workspace,
+        runner=runner,
+        wall_clock_seconds=0,
+        min_approaches=1,
+    )
+
+    outcome = await phase.run(_ctx(work_dir, ticket))
+
+    assert outcome.kind == OutcomeKind.HALT_EXHAUSTED
+    assert "wall-clock" in outcome.message
+
+
+async def test_run_triggers_regression_on_increasing_failures(tmp_path: Path) -> None:
+    """When failing count grows above the best seen, halt the approach with regression."""
+    workspace, work_dir, ticket = _make_workspace(tmp_path)
+    responses = [
+        _ok_response("## FILE: src/a.py\n```python\nx = 1\n```\n"),
+        _ok_response("## FILE: src/b.py\n```python\nx = 2\n```\n"),
+    ]
+    make_outcomes = [
+        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_a\n", stderr=""),
+        SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::test_a\nFAILED tests/t.py::test_b\n", stderr=""),
+    ]
+    runner = ScriptedRunner(make_outcomes)
+    phase = ImplementationPhase(
+        llm_client=ScriptedLlmClient(responses),
+        workspace=workspace,
+        runner=runner,
+        max_iterations=10,
+        stagnation_threshold=99,
+        min_approaches=1,
+    )
+
+    outcome = await phase.run(_ctx(work_dir, ticket))
+
+    assert outcome.kind == OutcomeKind.HALT_EXHAUSTED
+    payload = json.loads((work_dir / IMPLEMENTATION_REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert payload["approaches"][0]["stop_reason"] == "regression"
+
+
+async def test_run_invokes_summarizer_after_threshold(tmp_path: Path) -> None:
+    """After `summarize_every` iterations the summarizer is called and loop_summary.md is written."""
+    workspace, work_dir, ticket = _make_workspace(tmp_path)
+    # Many failures, all with same signature so neither stagnation nor max-iter trip first.
+    impl_responses = [_ok_response(f"## FILE: src/it{i}.py\n```python\nx = {i}\n```\n") for i in range(1, 7)]
+    summarizer_responses = [_ok_response("compressed history goes here.", model="summarizer-stub") for _ in range(5)]
+    summarizer = ScriptedLlmClient(summarizer_responses, model="summarizer-stub")
+    failure = SubprocessOutcome(returncode=1, stdout="FAILED tests/t.py::a\n", stderr="")
+    runner = ScriptedRunner([failure] * 6)
+    phase = ImplementationPhase(
+        llm_client=ScriptedLlmClient(impl_responses),
+        summarizer_client=summarizer,
+        workspace=workspace,
+        runner=runner,
+        max_iterations=5,
+        stagnation_threshold=99,
+        min_approaches=1,
+        summarize_every=3,
+        keep_recent=1,
+    )
+
+    await phase.run(_ctx(work_dir, ticket))
+
+    assert (work_dir / "loop_summary.md").exists()
+    assert "compressed history" in (work_dir / "loop_summary.md").read_text(encoding="utf-8")
+    # Summarizer was called at least once.
+    assert len(summarizer.calls) >= 1

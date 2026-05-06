@@ -87,6 +87,8 @@ class State(BaseModel):
     e2e_commit_sha: str | None = None
     implementation_commit_sha: str | None = None
     review_verdict: str | None = None
+    review_concerns: str | None = None
+    review_iteration: int = 0
     pr_url: str | None = None
 
 

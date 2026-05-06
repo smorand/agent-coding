@@ -25,6 +25,15 @@ Python 3.13+, Typer (CLI), pydantic-settings (config), OpenTelemetry (tracing), 
 uv sync
 ```
 
+## Example configs
+
+Two ready-to-use `config.yaml` files live in `examples/` :
+
+- `examples/config.local.yaml` — single vLLM / TGI / llama.cpp endpoint serving a Qwen 3.6 27B (or comparable) model.
+- `examples/config.openrouter.yaml` — hosted via OpenRouter with a demo tiering: `qwen/qwen3-8b` for deterministic phases, `qwen/qwen3.6-flash` for comprehension and summarizer, `qwen/qwen3.6-27b` for planning / E2E writing / implementation / review.
+
+See `examples/README.md` for the rationale and how to swap models.
+
 ## Usage
 
 ```bash

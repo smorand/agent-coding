@@ -1,0 +1,22 @@
+# Reduce Docker build context to what the image actually needs.
+.git
+.github
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+dist
+build
+*.egg-info
+__pycache__
+*.pyc
+*.pyo
+*.log
+.agent_work
+.env
+specs
+vars
+tests
+docs

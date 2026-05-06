@@ -4,7 +4,7 @@ Autonomous coding agent that takes a structured user story as input and produces
 
 ## Status
 
-**MVP feature-complete.** All eight pipeline phases (classification, DoR, comprehension, planning, E2E writing, implementation loop, review, PR creation) have real logic. Multi-approach exploration (FR-009) and rolling-summary context compression (FR-010) are deferred follow-ups; the single-approach implementation loop is sufficient for the happy-path E2E coverage. See `specs/` for the MVP specification, `vars/` for the canonical templates the agent consumes.
+**MVP feature-complete.** All eight pipeline phases (classification, DoR, comprehension, planning, E2E writing, implementation loop, review, PR creation) implement the spec's `Must-have` requirements: multi-approach exploration (FR-009), rolling-summary context compression (FR-010), wall-clock budget, regression detection, re-run on `REQUEST_CHANGES` (FR-011), audit-trail commits (FR-017), and SHA tampering detection (E2E-026). Tooling includes `apply_patch` (multi-location diffs) and pyright-backed LSP wrappers (`lsp_definition`, `lsp_references`, `lsp_hover`). See `specs/` for the MVP specification, `vars/` for the canonical templates the agent consumes.
 
 ## Tech stack
 
@@ -28,6 +28,7 @@ uv sync
 ## Usage
 
 ```bash
+make run ARGS='version'                                   # print agent-code version
 make run ARGS='check-env'                                 # FR-015 toolchain pre-flight
 make run ARGS='config-show --config cfg.yaml'             # FR-002 config validation
 make run ARGS='run path/to/ticket.md --config cfg.yaml'   # main pipeline

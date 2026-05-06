@@ -34,6 +34,62 @@ Two ready-to-use `config.yaml` files live in `examples/` :
 
 See `examples/README.md` for the rationale and how to swap models.
 
+## Authoring a ticket
+
+A ticket is a single Markdown file. It MUST pass the Definition-of-Ready phase before any other phase runs; otherwise the agent appends a structured comment to the file and exits with code 1.
+
+### Minimal example that passes the DoR
+
+```markdown
+---
+id: add-subtract
+title: Add a subtract function to calc
+author: smorand
+---
+
+## Description
+
+The calc module currently exposes only `add`. Add a symmetric `subtract`
+function callable from the same module so internal arithmetic helpers
+have parity. Validate inputs and raise `TypeError` on non-integers.
+
+## Acceptance Criteria
+
+- AC-1: `calc.subtract(5, 3)` returns the integer `2`.
+- AC-2: `calc.subtract(0, 0)` returns the integer `0`.
+- AC-3: `calc.subtract(1.5, 0)` raises `TypeError`.
+```
+
+Save as `tickets/add-subtract.md`, then `make run ARGS='run tickets/add-subtract.md --config examples/config.openrouter.yaml'`.
+
+### Required structure
+
+| Field | Rule |
+|---|---|
+| Filename | extension `.md` |
+| Frontmatter `id` | matches `^[a-z0-9][a-z0-9-]{2,63}$` (used as the `<ticket-id>` for `.agent_work/<id>/`, branch name, commit messages, PR title) |
+| Frontmatter `title` | 5 to 80 characters |
+| `## Description` | at least 50 non-whitespace characters of prose explaining the change and its motivation |
+| `## Acceptance Criteria` | at least one bullet `- AC-N: <text>`, each criterion 10+ chars and testable (an E2E test must be able to assert it) |
+| `## Infrastructure` (optional) | if a line starts with `- requires:` it must have a non-empty value (e.g. `- requires: Postgres 15`) |
+
+Optional sections (`## Out of Scope`, `## Examples`, `## Notes`, `## Dependencies`) are accepted and surfaced to the comprehension and planning phases.
+
+### Where to look for more
+
+- `vars/ticket-template/ticket-example-ready.md` — fully fleshed-out example with frontmatter labels, examples, notes; used as a fixture in the test suite.
+- `vars/ticket-template/ticket-example-not-ready.md` — counter-example that intentionally fails the DoR; useful to see what NOT to do.
+- `vars/ticket-template/ticket-blank.md` — empty skeleton you can copy.
+- `.agent_docs/ticket-template.md` — canonical specification, every section, every rule.
+- `.agent_docs/dor.md` — full DoR rules table and the comment format the agent appends on failure.
+
+### Tips
+
+- Make each AC observable. `AC-1: subtract handles edge cases` is too vague; the agent will write a test it cannot reliably pass. Prefer `AC-1: subtract(0, 0) returns the integer 0`.
+- List concrete out-of-scope items. The reviewer phase otherwise tends to flag missing functionality.
+- Declare every infra dependency. The planning phase will halt with exit 1 if `infra_needs.md` lists e.g. Postgres but `docker-compose.yml` does not declare it.
+- Keep the ticket under ~5K tokens. The comprehension phase caps source files at 16 KiB and total context at 64 KiB; longer tickets get truncated.
+
 ## Usage
 
 ```bash

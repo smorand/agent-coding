@@ -262,7 +262,10 @@ async def test_run_uses_plain_diff_when_no_e2e_commit(tmp_path: Path) -> None:
     await phase.run(_ctx(work_dir, ticket))
 
     diff_calls = [c for c in runner.calls if c[1:2] == ["diff"]]
-    assert diff_calls == [["git", "diff"]]
+    # `git diff` may be invoked twice: once to build the LLM prompt, once
+    # by the doc-maintenance gate that scans the diff for src/ changes.
+    assert diff_calls
+    assert all(c == ["git", "diff"] for c in diff_calls)
 
 
 async def test_run_returns_halt_error_on_llm_failure(tmp_path: Path) -> None:
@@ -276,6 +279,45 @@ async def test_run_returns_halt_error_on_llm_failure(tmp_path: Path) -> None:
     assert outcome.kind == OutcomeKind.HALT_ERROR
     assert "endpoint unreachable" in outcome.message
     assert not (work_dir / REVIEW_REPORT_FILENAME).exists()
+
+
+async def test_run_doc_maintenance_gate_auto_flags_when_src_changed_without_docs(
+    tmp_path: Path,
+) -> None:
+    """FR-016: a diff under src/ without CLAUDE.md / README.md / .agent_docs/ adds a blocking concern."""
+    workspace, work_dir, ticket = _make_workspace(tmp_path)
+    fake = FakeLlmClient(_ok_response(_APPROVE_RESPONSE))
+    runner = FakeRunner()
+    runner.diff_out = "diff --git a/src/x.py b/src/x.py\n--- a/src/x.py\n+++ b/src/x.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n"
+    phase = ReviewPhase(llm_client=fake, workspace=workspace, git_runner=runner)
+    ctx = _ctx(work_dir, ticket)
+
+    await phase.run(ctx)
+
+    payload = json.loads((work_dir / REVIEW_REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert payload["verdict"] == "REQUEST_CHANGES"
+    paths = {b["path"] for b in payload["blocking"]}
+    assert "CLAUDE.md" in paths
+
+
+async def test_run_doc_maintenance_gate_silent_when_docs_touched(tmp_path: Path) -> None:
+    """A diff that touches both src/ and CLAUDE.md does not trigger the gate."""
+    workspace, work_dir, ticket = _make_workspace(tmp_path)
+    fake = FakeLlmClient(_ok_response(_APPROVE_RESPONSE))
+    runner = FakeRunner()
+    runner.diff_out = (
+        "--- a/src/x.py\n+++ b/src/x.py\n"
+        "@@ -1 +1 @@\n-x = 1\n+x = 2\n"
+        "--- a/CLAUDE.md\n+++ b/CLAUDE.md\n"
+        "@@ -1 +1 @@\n-old\n+new\n"
+    )
+    phase = ReviewPhase(llm_client=fake, workspace=workspace, git_runner=runner)
+
+    await phase.run(_ctx(work_dir, ticket))
+
+    payload = json.loads((work_dir / REVIEW_REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert payload["verdict"] == "APPROVE"
+    assert payload["blocking"] == []
 
 
 async def test_run_returns_halt_error_on_malformed_response(tmp_path: Path) -> None:

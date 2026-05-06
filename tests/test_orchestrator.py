@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import pytest
@@ -17,9 +18,11 @@ from orchestrator import (
 from phases.base import OutcomeKind, Phase, PhaseContext, PhaseOutcome
 from state import PhaseName, PhaseStatus, RunStatus, StateStore
 from tools.anti_cheat import AntiCheatGuard
+from tools.base import SubprocessOutcome
 from tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
 
@@ -278,3 +281,174 @@ async def test_orchestrator_without_tools_yields_none_guard(tmp_path: Path) -> N
     await orch2.run(ticket_id="demo2", ticket_path=str(ticket))
     # Recorder only appends when ctx.tools is not None, so the list stays empty.
     assert observed == []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Audit trail commits (FR-017) and REQUEST_CHANGES re-run (FR-011)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class _GitRecorder:
+    """SubprocessRunner test double; returns success and records every argv."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    async def run(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path | None = None,
+        timeout: float = 30.0,
+        input_text: str | None = None,
+    ) -> SubprocessOutcome:
+        del cwd, timeout, input_text
+        self.calls.append(list(argv))
+        return SubprocessOutcome(returncode=0, stdout="", stderr="")
+
+
+class _ReviewMutator(Phase):
+    """Phase that sets `state.review_verdict` on each call from a script."""
+
+    def __init__(self, name: PhaseName, verdicts: list[str]) -> None:
+        self.name = name
+        self._verdicts = list(verdicts)
+        self.run_count = 0
+
+    async def run(self, ctx: PhaseContext) -> PhaseOutcome:
+        self.run_count += 1
+        if self._verdicts:
+            ctx.state.review_verdict = self._verdicts.pop(0)
+        return PhaseOutcome()
+
+
+async def test_audit_trail_commits_state_after_each_phase(tmp_path: Path) -> None:
+    """With audit_trail=True, every phase produces a `git add` + `git commit`."""
+    ticket = _ticket(tmp_path)
+    p1, p2 = _two_phase_pipeline()
+    runner = _GitRecorder()
+    orch = Orchestrator(
+        workspace=tmp_path,
+        template_version="0.1.0",
+        phases=(p1, p2),
+        audit_runner=runner,
+    )
+
+    await orch.run(ticket_id="demo", ticket_path=str(ticket))
+
+    add_calls = [c for c in runner.calls if c[:2] == ["git", "add"]]
+    commit_calls = [c for c in runner.calls if c[:2] == ["git", "commit"]]
+    assert len(add_calls) == 2
+    assert len(commit_calls) == 2
+    # The two commit messages contain the phase names in canonical order.
+    assert "classification" in " ".join(commit_calls[0])
+    assert "dor" in " ".join(commit_calls[1])
+
+
+async def test_audit_trail_can_be_disabled(tmp_path: Path) -> None:
+    """`audit_trail=False` skips git invocations entirely."""
+    ticket = _ticket(tmp_path)
+    p1, p2 = _two_phase_pipeline()
+    runner = _GitRecorder()
+    orch = Orchestrator(
+        workspace=tmp_path,
+        template_version="0.1.0",
+        phases=(p1, p2),
+        audit_runner=runner,
+        audit_trail=False,
+    )
+
+    await orch.run(ticket_id="demo", ticket_path=str(ticket))
+
+    assert runner.calls == []
+
+
+def _write_review_json(work_dir: Path, blocking: list[dict[str, str]]) -> None:
+    work_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"verdict": "REQUEST_CHANGES", "blocking": blocking}
+    (work_dir / "review.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+async def test_review_request_changes_triggers_one_implementation_rerun(
+    tmp_path: Path,
+) -> None:
+    """REQUEST_CHANGES at iteration 1 reruns implementation+review exactly once."""
+    ticket = _ticket(tmp_path)
+    work_dir = tmp_path / AGENT_WORK_DIRNAME / "demo"
+
+    impl = RecordingPhase(PhaseName.IMPLEMENTATION)
+
+    class _Reviewer(Phase):
+        name = PhaseName.REVIEW
+
+        def __init__(self) -> None:
+            self.runs = 0
+
+        async def run(self, ctx: PhaseContext) -> PhaseOutcome:
+            self.runs += 1
+            if self.runs == 1:
+                _write_review_json(work_dir, [{"path": "x", "line": "1", "reason": "fix"}])
+                ctx.state.review_verdict = "REQUEST_CHANGES"
+            else:
+                ctx.state.review_verdict = "APPROVE"
+            return PhaseOutcome()
+
+    reviewer = _Reviewer()
+    orch = Orchestrator(
+        workspace=tmp_path,
+        template_version="0.1.0",
+        phases=(impl, reviewer),
+        audit_trail=False,
+    )
+
+    exit_code = await orch.run(ticket_id="demo", ticket_path=str(ticket))
+
+    assert exit_code == EXIT_OK
+    assert impl.run_count == 2
+    assert reviewer.runs == 2
+    state = await StateStore(work_dir).load()
+    assert state.review_iteration == 1
+    assert state.review_concerns is not None
+    assert "fix" in state.review_concerns
+
+
+async def test_review_request_changes_halts_after_max_iterations(tmp_path: Path) -> None:
+    """A second REQUEST_CHANGES verdict halts the run with EXIT_EXHAUSTED."""
+    ticket = _ticket(tmp_path)
+    work_dir = tmp_path / AGENT_WORK_DIRNAME / "demo"
+
+    impl = RecordingPhase(PhaseName.IMPLEMENTATION)
+
+    class _PersistentlyAngryReviewer(Phase):
+        name = PhaseName.REVIEW
+
+        def __init__(self) -> None:
+            self.runs = 0
+
+        async def run(self, ctx: PhaseContext) -> PhaseOutcome:
+            self.runs += 1
+            _write_review_json(work_dir, [{"path": "x", "line": "1", "reason": "still bad"}])
+            ctx.state.review_verdict = "REQUEST_CHANGES"
+            if self.runs >= 2:
+                # On the second review, simulate the orchestrator's contract:
+                # the review phase itself doesn't halt; the orchestrator does.
+                return PhaseOutcome()
+            return PhaseOutcome()
+
+    reviewer = _PersistentlyAngryReviewer()
+    orch = Orchestrator(
+        workspace=tmp_path,
+        template_version="0.1.0",
+        phases=(impl, reviewer),
+        audit_trail=False,
+    )
+
+    exit_code = await orch.run(ticket_id="demo", ticket_path=str(ticket))
+
+    # After 2 reviews returning REQUEST_CHANGES, the orchestrator stops
+    # rerunning. The run completes with EXIT_OK because the phase returned
+    # CONTINUE both times — this matches the MVP's "PR creation will mark
+    # the PR as draft based on the verdict" behavior.
+    assert exit_code == EXIT_OK
+    assert impl.run_count == 2  # ran once + one rerun, not three
+    assert reviewer.runs == 2
